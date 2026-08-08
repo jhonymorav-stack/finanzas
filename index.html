@@ -89,6 +89,15 @@
       <!-- Tab: Ajustes -->
       <div id="panel-ajustes" class="tab-panel hidden">
         <div class="ajustes-content">
+          <button class="profile-card" id="profile-card" onclick="App.openProfileSheet()">
+            <span class="profile-avatar" id="profile-avatar">?</span>
+            <span class="profile-info">
+              <span class="profile-name" id="profile-name">Agregar tu nombre</span>
+              <span class="profile-email" id="profile-email">—</span>
+            </span>
+            <span class="profile-age" id="profile-age"></span>
+          </button>
+
           <button class="ajustes-row" onclick="App.openListSheet('categories')">
             <span class="ajustes-row-icon">🏷️</span>
             <span class="ajustes-row-text">
@@ -260,6 +269,37 @@
 
       <div class="save-btn-wrap">
         <button id="goal-save-btn" class="save-btn" onclick="App.saveGoal()" disabled>Guardar meta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Perfil ───────────────────────────────────────────────────────────── -->
+  <div id="profile-sheet-overlay" class="sheet-overlay hidden" onclick="if(event.target===this) App.closeProfileSheet()">
+    <div class="sheet">
+      <div class="sheet-handle"><span></span></div>
+      <div class="sheet-header">
+        <button class="sheet-cancel" onclick="App.closeProfileSheet()">Cancelar</button>
+        <div class="sheet-title">Tu perfil</div>
+        <div class="sheet-spacer" style="width:48px;"></div>
+      </div>
+
+      <div class="field-block" style="margin-top:20px;">
+        <div class="field-label">Nombre</div>
+        <input id="profile-name-input" class="goal-title-input" type="text" placeholder="ej. Jhony Mora" maxlength="60" oninput="App.onProfileNameInput(this.value)">
+      </div>
+
+      <div class="field-block">
+        <div class="field-label">Edad</div>
+        <input id="profile-age-input" class="goal-title-input" type="text" inputmode="numeric" autocomplete="off" placeholder="ej. 28" oninput="App.onProfileAgeInput(this.value)">
+      </div>
+
+      <div class="field-block">
+        <div class="field-label">Correo</div>
+        <div class="profile-email-readonly" id="profile-email-readonly">—</div>
+      </div>
+
+      <div class="save-btn-wrap">
+        <button id="profile-save-btn" class="save-btn" onclick="App.saveProfile()">Guardar perfil</button>
       </div>
     </div>
   </div>

@@ -35,7 +35,11 @@ const App = (() => {
     goalCategory: '',
     goalDate: '',
     // sheet — gestionar categorías/cuentas
-    listSheetKind: 'categories'
+    listSheetKind: 'categories',
+    // perfil
+    profile: {},
+    profileFormName: '',
+    profileFormAge: ''
   };
 
   // ── Date helpers ─────────────────────────────────────────────────────────
@@ -114,7 +118,7 @@ const App = (() => {
 
   // ── Init ─────────────────────────────────────────────────────────────────
   function loadAll() {
-    return Promise.all([loadTransactions(), loadGoals(), loadCategories(), loadAccounts(), loadBudgets()]);
+    return Promise.all([loadTransactions(), loadGoals(), loadCategories(), loadAccounts(), loadBudgets(), loadProfile()]);
   }
 
   async function init() {
@@ -166,6 +170,11 @@ const App = (() => {
     } catch (e) { console.error(e); }
   }
 
+  async function loadProfile() {
+    try { state.profile = await DB.getProfile() || {}; }
+    catch (e) { console.error(e); }
+  }
+
   // ── Render dispatcher ────────────────────────────────────────────────────
   function render() {
     document.getElementById('auth-screen').classList.toggle('hidden', !!state.session);
@@ -210,6 +219,21 @@ const App = (() => {
   function renderAjustes() {
     const el = document.getElementById('ajustes-mode');
     if (el) el.textContent = DB.mode === 'supabase' ? 'Sincronizado con Supabase' : 'Local (solo este dispositivo)';
+    renderProfileCard();
+  }
+
+  function currentEmail() {
+    return (state.session && state.session.user && state.session.user.email) || '';
+  }
+
+  function renderProfileCard() {
+    const name = (state.profile && state.profile.full_name) || '';
+    const age = state.profile && state.profile.age;
+    const email = currentEmail();
+    document.getElementById('profile-name').textContent = name || 'Agregar tu nombre';
+    document.getElementById('profile-email').textContent = email;
+    document.getElementById('profile-avatar').textContent = (name || email || '?').charAt(0).toUpperCase();
+    document.getElementById('profile-age').textContent = age ? `${age} años` : '';
   }
 
   function handleFabClick() {
@@ -690,6 +714,52 @@ const App = (() => {
     } catch (e) { console.error(e); toast('No se pudo eliminar'); }
   }
 
+  // ── Perfil ───────────────────────────────────────────────────────────────
+  function openProfileSheet() {
+    state.profileFormName = (state.profile && state.profile.full_name) || '';
+    state.profileFormAge = (state.profile && state.profile.age) ? String(state.profile.age) : '';
+    document.getElementById('profile-name-input').value = state.profileFormName;
+    document.getElementById('profile-age-input').value = state.profileFormAge;
+    document.getElementById('profile-email-readonly').textContent = currentEmail() || 'Sin correo';
+    document.getElementById('profile-sheet-overlay').classList.remove('hidden');
+  }
+
+  function closeProfileSheet() {
+    document.getElementById('profile-sheet-overlay').classList.add('hidden');
+  }
+
+  function onProfileNameInput(v) { state.profileFormName = v.slice(0, 60); }
+  function onProfileAgeInput(v) {
+    const digits = v.replace(/[^\d]/g, '').slice(0, 3);
+    state.profileFormAge = digits;
+    document.getElementById('profile-age-input').value = digits;
+  }
+
+  async function saveProfile() {
+    const name = state.profileFormName.trim();
+    const ageNum = state.profileFormAge ? Number(state.profileFormAge) : null;
+    if (ageNum !== null && (ageNum <= 0 || ageNum >= 130)) {
+      toast('Ingresa una edad válida');
+      return;
+    }
+    const btn = document.getElementById('profile-save-btn');
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+    try {
+      await DB.upsertProfile({ full_name: name || null, age: ageNum });
+      await loadProfile();
+      renderProfileCard();
+      closeProfileSheet();
+      toast('Perfil actualizado');
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo guardar el perfil');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Guardar perfil';
+    }
+  }
+
   // ── Exportar a Excel ─────────────────────────────────────────────────────
   function exportExcel() {
     try {
@@ -1099,6 +1169,7 @@ const App = (() => {
     onGoalTitleInput, onGoalAmountInput, onGoalDateInput, saveGoal,
     deleteGoalFromSheet, addContribution, exportExcel, editCategoryBudget,
     openListSheet, closeListSheet, addListItem, deleteListItem,
+    openProfileSheet, closeProfileSheet, onProfileNameInput, onProfileAgeInput, saveProfile,
     sendMagicLink, signOut
   };
 })();

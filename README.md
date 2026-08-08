@@ -111,6 +111,8 @@ Sin esto, la app funciona en **modo local** (guarda solo en ese navegador,
 - **Foto del recibo**: adjunta una imagen a cualquier transacción (se
   comprime automáticamente antes de guardarse) — útil para reclamos o
   gastos de negocio. En Supabase se guarda en un bucket privado.
+- **Perfil** (pestaña Ajustes): nombre y edad editables; el correo se toma
+  directo de tu sesión (no se puede editar ahí).
 - **Navegación por mes** con flechas `<` `>` en la parte superior.
 
 ## Estructura del proyecto

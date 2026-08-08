@@ -578,6 +578,48 @@ input:focus, textarea:focus, button:focus { outline: none; }
 .goal-status.ok { color: var(--green); }
 .goal-status.over { color: var(--red); }
 
+/* ── Perfil ───────────────────────────────────────────────────────────────── */
+.profile-card {
+  width: 100%;
+  display: flex; align-items: center; gap: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  text-align: left;
+  margin-bottom: 18px;
+}
+.profile-card:active { background: var(--bg-card2); }
+.profile-avatar {
+  width: 48px; height: 48px; flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent-soft, var(--bg-pill));
+  color: var(--white);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 19px; font-weight: 800;
+  border: 1px solid var(--border-strong, var(--border));
+}
+.profile-info { flex: 1; min-width: 0; }
+.profile-name { display: block; font-size: 16px; font-weight: 700; }
+.profile-email {
+  display: block; font-size: 12.5px; color: var(--text-muted); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.profile-age {
+  flex-shrink: 0; font-size: 12.5px; font-weight: 700; color: var(--text-muted);
+  background: var(--bg-pill); border-radius: 999px; padding: 5px 10px;
+}
+.profile-age:empty { display: none; }
+
+.profile-email-readonly {
+  background: var(--bg-pill);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 13px 14px;
+  font-size: 14.5px;
+  color: var(--text-muted);
+}
+
 /* ── Ajustes ──────────────────────────────────────────────────────────────── */
 .ajustes-content { padding: 16px; }
 .ajustes-row {

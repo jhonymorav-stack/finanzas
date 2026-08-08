@@ -4,6 +4,24 @@
 --  2. Ve a "SQL Editor" → "New query"
 --  3. Pega todo este archivo y dale "Run"
 
+-- ── Perfil ───────────────────────────────────────────────────────────────────
+create table if not exists public.profiles (
+  id          uuid primary key references auth.users(id) on delete cascade,
+  full_name   text,
+  age         integer check (age > 0 and age < 130),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+alter table public.profiles enable row level security;
+
+drop policy if exists "select own profile" on public.profiles;
+create policy "select own profile" on public.profiles for select using (auth.uid() = id);
+drop policy if exists "insert own profile" on public.profiles;
+create policy "insert own profile" on public.profiles for insert with check (auth.uid() = id);
+drop policy if exists "update own profile" on public.profiles;
+create policy "update own profile" on public.profiles for update using (auth.uid() = id);
+
 create table if not exists public.transactions (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references auth.users(id) on delete cascade,

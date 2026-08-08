@@ -11,6 +11,7 @@ const DB = (() => {
   const CATEGORIES_KEY = 'finanzas_custom_categories_v1';
   const ACCOUNTS_KEY = 'finanzas_custom_accounts_v1';
   const BUDGETS_KEY = 'finanzas_budgets_v1';
+  const PROFILE_KEY = 'finanzas_profile_v1';
 
   let client = null;
   if (configured && window.supabase) {
@@ -24,6 +25,13 @@ const DB = (() => {
   }
   function localSave(key, list) {
     localStorage.setItem(key, JSON.stringify(list));
+  }
+  function localGetObj(key) {
+    try { return JSON.parse(localStorage.getItem(key)) || {}; }
+    catch { return {}; }
+  }
+  function localSaveObj(key, obj) {
+    localStorage.setItem(key, JSON.stringify(obj));
   }
 
   return {
@@ -293,6 +301,30 @@ const DB = (() => {
     async deleteReceipt(path) {
       if (!path || !configured) return;
       await client.storage.from('receipts').remove([path]).catch(() => {});
+    },
+
+    // ── Perfil ───────────────────────────────────────────────────────────────
+    async getProfile() {
+      if (!configured) return localGetObj(PROFILE_KEY);
+      const { data: sessionData } = await client.auth.getSession();
+      const uid = sessionData.session?.user?.id;
+      if (!uid) return {};
+      const { data, error } = await client.from('profiles').select('*').eq('id', uid).maybeSingle();
+      if (error) throw error;
+      return data || {};
+    },
+
+    async upsertProfile(patch) {
+      if (!configured) {
+        localSaveObj(PROFILE_KEY, { ...localGetObj(PROFILE_KEY), ...patch });
+        return;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      const uid = sessionData.session?.user?.id;
+      const { error } = await client
+        .from('profiles')
+        .upsert({ id: uid, ...patch, updated_at: new Date().toISOString() });
+      if (error) throw error;
     }
   };
 })();
