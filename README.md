@@ -101,6 +101,16 @@ Sin esto, la app funciona en **modo local** (guarda solo en ese navegador,
 - **Exportar a Excel** (pestaña Ajustes): descarga un `.xlsx` con dos hojas
   — resumen mensual (ingresos/egresos/neto) y el detalle completo de todas
   tus transacciones.
+- **Cuentas / medios de pago**: cada transacción se puede asociar a Efectivo,
+  Tarjeta, Cuenta bancaria, Otro, o una cuenta que tú agregues (ej. Nequi).
+- **Categorías personalizadas**: además de las 9 predeterminadas, agrega las
+  tuyas desde el selector ("+ Nueva") o gestiónalas todas desde Ajustes.
+- **Presupuesto mensual por categoría**: defínelo una vez y se repite cada
+  mes. Se muestra dentro de Métricas con semáforo — verde si vas bien,
+  amarillo cerca del límite (≥70%), rojo si te excediste.
+- **Foto del recibo**: adjunta una imagen a cualquier transacción (se
+  comprime automáticamente antes de guardarse) — útil para reclamos o
+  gastos de negocio. En Supabase se guarda en un bucket privado.
 - **Navegación por mes** con flechas `<` `>` en la parte superior.
 
 ## Estructura del proyecto
@@ -113,10 +123,12 @@ finanzas/
 ├── css/style.css           Todos los estilos
 ├── js/
 │   ├── config.js            ← AQUÍ van tus claves de Supabase
-│   ├── categories.js         Categorías + iconos
-│   ├── db.js                  Capa de datos (transacciones + metas)
-│   ├── rates.js                Tasa de cambio COP → USD
-│   ├── export.js                Exportar a Excel (SheetJS)
-│   └── app.js                    Lógica de la interfaz
-└── supabase/schema.sql     SQL para crear las tablas (transactions + goals) + seguridad
+│   ├── categories.js         Categorías predeterminadas + iconos
+│   ├── accounts.js            Cuentas predeterminadas + iconos
+│   ├── db.js                   Capa de datos (transacciones, metas, categorías,
+│   │                            cuentas, presupuestos, recibos)
+│   ├── rates.js                 Tasa de cambio COP → USD
+│   ├── export.js                 Exportar a Excel (SheetJS)
+│   └── app.js                     Lógica de la interfaz
+└── supabase/schema.sql     SQL para crear todas las tablas + bucket de recibos + seguridad
 ```

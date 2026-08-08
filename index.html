@@ -89,6 +89,20 @@
       <!-- Tab: Ajustes -->
       <div id="panel-ajustes" class="tab-panel hidden">
         <div class="ajustes-content">
+          <button class="ajustes-row" onclick="App.openListSheet('categories')">
+            <span class="ajustes-row-icon">🏷️</span>
+            <span class="ajustes-row-text">
+              <span class="ajustes-row-title">Categorías</span>
+              <span class="ajustes-row-sub">Agrega o elimina tus categorías personalizadas</span>
+            </span>
+          </button>
+          <button class="ajustes-row" onclick="App.openListSheet('accounts')">
+            <span class="ajustes-row-icon">💳</span>
+            <span class="ajustes-row-text">
+              <span class="ajustes-row-title">Cuentas</span>
+              <span class="ajustes-row-sub">Agrega o elimina tus medios de pago personalizados</span>
+            </span>
+          </button>
           <button class="ajustes-row" onclick="App.exportExcel()">
             <span class="ajustes-row-icon">📊</span>
             <span class="ajustes-row-text">
@@ -170,8 +184,26 @@
       </div>
 
       <div class="field-block">
+        <div class="field-label">Cuenta</div>
+        <div class="category-grid" id="account-grid"></div>
+      </div>
+
+      <div class="field-block">
         <div class="field-label">Categoría</div>
         <div class="category-grid" id="category-grid"></div>
+      </div>
+
+      <div class="field-block">
+        <div class="field-label">Recibo (opcional)</div>
+        <div id="receipt-empty" class="receipt-empty" onclick="document.getElementById('receipt-file-input').click()">
+          <span class="receipt-empty-icon">📷</span>
+          <span>Agregar foto del recibo</span>
+        </div>
+        <div id="receipt-preview-wrap" class="receipt-preview-wrap hidden">
+          <img id="receipt-preview-img" class="receipt-preview-img" src="" alt="Recibo">
+          <button type="button" class="receipt-remove-btn" onclick="App.removeReceipt()">✕</button>
+        </div>
+        <input type="file" id="receipt-file-input" accept="image/*" capture="environment" class="hidden" onchange="App.onReceiptFileChange(this)">
       </div>
 
       <div class="field-block">
@@ -232,6 +264,32 @@
     </div>
   </div>
 
+  <!-- ── Gestionar categorías / cuentas personalizadas ───────────────────── -->
+  <div id="list-sheet-overlay" class="sheet-overlay hidden" onclick="if(event.target===this) App.closeListSheet()">
+    <div class="sheet">
+      <div class="sheet-handle"><span></span></div>
+      <div class="sheet-header">
+        <button class="sheet-cancel" onclick="App.closeListSheet()">Cerrar</button>
+        <div class="sheet-title" id="list-sheet-title">Categorías</div>
+        <div class="sheet-spacer" style="width:48px;"></div>
+      </div>
+
+      <div class="field-block" style="margin-top:14px;">
+        <div class="field-label" id="list-sheet-hint">Predeterminadas — no se pueden eliminar</div>
+        <div class="list-sheet-items" id="list-sheet-builtin"></div>
+      </div>
+
+      <div class="field-block">
+        <div class="field-label">Personalizadas</div>
+        <div class="list-sheet-items" id="list-sheet-custom"></div>
+      </div>
+
+      <div class="save-btn-wrap">
+        <button class="save-btn" id="list-sheet-add-btn" onclick="App.addListItem()">+ Agregar nueva</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Confirm dialog genérico (reemplaza confirm() nativo) ───────────── -->
   <div id="confirm-overlay" class="confirm-overlay hidden">
     <div class="confirm-box">
@@ -248,7 +306,7 @@
     <div class="confirm-box">
       <div class="confirm-message" id="prompt-message"></div>
       <div class="prompt-input-row">
-        <span class="prompt-prefix">COP</span>
+        <span class="prompt-prefix" id="prompt-prefix">COP</span>
         <input id="prompt-input" class="prompt-input" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
       </div>
       <div class="confirm-actions">
@@ -264,6 +322,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="js/config.js"></script>
   <script src="js/categories.js"></script>
+  <script src="js/accounts.js"></script>
   <script src="js/db.js"></script>
   <script src="js/rates.js"></script>
   <script src="js/export.js"></script>
