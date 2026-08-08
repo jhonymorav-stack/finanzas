@@ -8,7 +8,7 @@
 // navegador solamente) para que puedas ver el diseño funcionando.
 
 window.FINANZAS_CONFIG = {
-  SUPABASE_URL: '',      // ej: https://xxxxxxxxxxxx.supabase.co
-  SUPABASE_ANON_KEY: '', // ej: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+  SUPABASE_URL: 'https://iedwqxvwitpueathueau.supabase.co',
+  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZHdxeHZ3aXRwdWVhdGh1ZWF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxNTAzNTYsImV4cCI6MjEwMTcyNjM1Nn0.ECLNXCGtgrVtrKWvuipbyMht2tA6K9HmRfx6AjhF0og',
   OWNER_EMAIL: 'jhonymoraxmk@gmail.com'
 };
