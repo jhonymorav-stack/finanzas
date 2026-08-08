@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
+  <meta name="theme-color" content="#000000">
+  <meta name="description" content="Finanzas — registra tus ingresos y gastos diarios">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Finanzas">
+  <title>Finanzas</title>
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Auth screen ─────────────────────────────────────────────────── -->
+    <section id="auth-screen" class="screen hidden">
+      <div class="auth-logo">💰</div>
+      <h1>Finanzas</h1>
+      <div id="auth-form">
+        <p>Ingresa tu correo para recibir un enlace mágico de acceso — sin contraseñas.</p>
+        <br>
+        <input id="auth-email" class="auth-input" type="email" placeholder="tu@correo.com" autocomplete="email" inputmode="email">
+        <br><br>
+        <button id="auth-send-btn" class="auth-btn" onclick="App.sendMagicLink()">Enviar enlace mágico</button>
+      </div>
+      <div id="auth-sent" class="hidden">
+        <p>📩 Te enviamos un enlace a tu correo. Ábrelo desde este mismo dispositivo para iniciar sesión.</p>
+      </div>
+      <p class="auth-note">Powered by Supabase</p>
+    </section>
+
+    <!-- ── App shell (logueado) ────────────────────────────────────────── -->
+    <section id="app-shell" class="screen hidden">
+
+      <div class="month-bar">
+        <button class="month-nav-btn" onclick="App.prevMonth()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div class="month-title" id="month-title">—</div>
+        <button class="month-nav-btn" onclick="App.nextMonth()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+
+      <!-- Tab: Resumen -->
+      <div id="panel-resumen" class="tab-panel">
+        <div class="balance-card">
+          <div class="balance-top">
+            <span class="balance-label">Balance neto</span>
+            <span class="currency-pill">COP</span>
+          </div>
+          <div class="balance-amount" id="balance-amount">COP 0</div>
+          <div class="balance-usd" id="balance-usd"></div>
+          <div class="balance-delta" id="balance-delta"></div>
+          <div class="balance-divider"></div>
+          <div class="balance-split">
+            <div>
+              <div class="split-label">Ingresos</div>
+              <div class="split-amount income" id="income-amount">+COP 0</div>
+            </div>
+            <div>
+              <div class="split-label">Egresos</div>
+              <div class="split-amount expense" id="expense-amount">−COP 0</div>
+            </div>
+          </div>
+        </div>
+        <div class="rates-note" id="rates-note"></div>
+
+        <div class="tx-list" id="tx-list"></div>
+      </div>
+
+      <!-- Tab: Métricas -->
+      <div id="panel-metricas" class="tab-panel hidden">
+        <div class="metrics-content" id="metrics-content"></div>
+      </div>
+
+      <button class="fab" onclick="App.openSheet()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+
+      <nav class="tab-bar">
+        <button class="tab-item active" data-tab="resumen" onclick="App.switchTab('resumen')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="12" y2="16"/></svg>
+          <span>Resumen</span>
+        </button>
+        <button class="tab-item" data-tab="metricas" onclick="App.switchTab('metricas')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M12 20V4M20 20v-7"/></svg>
+          <span>Métricas</span>
+        </button>
+        <button class="tab-item" data-tab="ajustes" onclick="App.signOut()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          <span>Salir</span>
+        </button>
+      </nav>
+    </section>
+  </div>
+
+  <!-- ── Nueva / editar transacción ────────────────────────────────────── -->
+  <div id="sheet-overlay" class="sheet-overlay hidden" onclick="if(event.target===this) App.closeSheet()">
+    <div class="sheet">
+      <div class="sheet-handle"><span></span></div>
+      <div class="sheet-header">
+        <button class="sheet-cancel" onclick="App.closeSheet()">Cancelar</button>
+        <div class="sheet-title" id="sheet-title">Nueva transacción</div>
+        <button class="sheet-delete hidden" id="sheet-delete-btn" onclick="App.deleteFromSheet()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg>
+        </button>
+      </div>
+
+      <div class="type-toggle" id="type-toggle">
+        <button data-type="egreso" onclick="App.setType('egreso')">Egreso</button>
+        <button data-type="ingreso" onclick="App.setType('ingreso')">Ingreso</button>
+      </div>
+
+      <div class="amount-section">
+        <div class="amount-caption">Monto · COP</div>
+        <div class="amount-row egreso" id="amount-row">
+          <span class="amount-prefix">COP</span>
+          <input id="amount-input" class="amount-input" type="text" inputmode="numeric" autocomplete="off" name="finanzas-monto" value="0" oninput="App.onAmountInput(this.value)">
+        </div>
+      </div>
+
+      <div class="field-block">
+        <div class="field-label">Fecha</div>
+        <div class="date-row">
+          <button class="date-nav-btn" onclick="App.shiftFormDate(-1)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="date-label" id="date-label">Hoy</div>
+          <button class="date-nav-btn" onclick="App.shiftFormDate(1)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="field-block">
+        <div class="field-label">Categoría</div>
+        <div class="category-grid" id="category-grid"></div>
+      </div>
+
+      <div class="field-block">
+        <div class="field-label">Nota (opcional) <span class="note-count" id="note-count">0/120</span></div>
+        <textarea id="note-input" class="note-input" placeholder="ej. Almuerzo con cliente" oninput="App.onNoteInput(this.value)"></textarea>
+      </div>
+
+      <div class="save-btn-wrap">
+        <button id="save-btn" class="save-btn" onclick="App.saveTransaction()" disabled>Guardar transacción</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Confirm dialog genérico (reemplaza confirm() nativo) ───────────── -->
+  <div id="confirm-overlay" class="confirm-overlay hidden">
+    <div class="confirm-box">
+      <div class="confirm-message" id="confirm-message"></div>
+      <div class="confirm-actions">
+        <button id="confirm-cancel" class="confirm-btn confirm-cancel">Cancelar</button>
+        <button id="confirm-ok" class="confirm-btn confirm-ok">Eliminar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/categories.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/rates.js"></script>
+  <script src="js/app.js"></script>
+
+  <script>
+    // El service worker solo se registra fuera de localhost, para que los cambios
+    // durante desarrollo se vean de inmediato sin pelear con la caché del SW.
+    if ('serviceWorker' in navigator && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    }
+  </script>
+</body>
+</html>
