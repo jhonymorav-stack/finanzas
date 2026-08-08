@@ -1,21 +1,31 @@
 // ── App ──────────────────────────────────────────────────────────────────────
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const GOAL_TYPE_LABEL = { ahorro: 'Ahorro', reduccion: 'Reducción de gasto', inversion: 'Inversión' };
+const GOAL_TYPE_ICON = { ahorro: '🐷', reduccion: '📉', inversion: '📈' };
 
 const App = (() => {
   const state = {
     session: null,
     transactions: [],
+    goals: [],
     currentMonth: startOfMonth(new Date()),
     activeTab: 'resumen',
     rate: null,
-    // sheet/form state
+    // sheet/form state — transacción
     editingId: null,
     formType: 'egreso',
-    formAmount: '',           // raw digits, in whole pesos
+    formAmount: '',
     formDate: todayISO(),
     formCategory: 'comida',
-    formNote: ''
+    formNote: '',
+    // sheet/form state — meta
+    editingGoalId: null,
+    goalType: 'ahorro',
+    goalTitle: '',
+    goalAmount: '',
+    goalCategory: '',
+    goalDate: ''
   };
 
   // ── Date helpers ─────────────────────────────────────────────────────────
@@ -65,26 +75,32 @@ const App = (() => {
     const [, m, d] = iso.split('-').map(Number);
     return `${d} de ${MESES[m - 1]}`;
   }
+  function formatDateShort(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return `${d} ${MESES_CORTO[m - 1]} ${y}`;
+  }
 
   function categoryById(id) { return window.CATEGORIES.find((c) => c.id === id) || window.CATEGORIES[window.CATEGORIES.length - 1]; }
+  function goalCategoryLabel(id) { return id ? categoryById(id).label : 'Todas las categorías'; }
   function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
   // ── Init ─────────────────────────────────────────────────────────────────
   async function init() {
     bindConfirmDialogButtons();
+    bindPromptDialogButtons();
     Rates.refresh().then((r) => { state.rate = r; renderAll(); });
 
     if (DB.isConfigured) {
       DB.onAuthChange(async (session) => {
         state.session = session;
-        if (session) { await loadTransactions(); renderAll(); }
+        if (session) { await Promise.all([loadTransactions(), loadGoals()]); renderAll(); }
         render();
       });
       state.session = await DB.getSession();
-      if (state.session) await loadTransactions();
+      if (state.session) await Promise.all([loadTransactions(), loadGoals()]);
     } else {
       state.session = await DB.getSession();
-      await loadTransactions();
+      await Promise.all([loadTransactions(), loadGoals()]);
     }
     render();
   }
@@ -92,6 +108,11 @@ const App = (() => {
   async function loadTransactions() {
     try { state.transactions = await DB.listTransactions(); }
     catch (e) { console.error(e); toast('No se pudieron cargar las transacciones'); }
+  }
+
+  async function loadGoals() {
+    try { state.goals = await DB.listGoals(); }
+    catch (e) { console.error(e); toast('No se pudieron cargar las metas'); }
   }
 
   // ── Render dispatcher ────────────────────────────────────────────────────
@@ -106,6 +127,7 @@ const App = (() => {
     renderBalanceCard();
     renderTxList();
     renderMetrics();
+    renderGoals();
   }
 
   function renderMonthBar() {
@@ -127,7 +149,21 @@ const App = (() => {
     state.activeTab = tab;
     document.getElementById('panel-resumen').classList.toggle('hidden', tab !== 'resumen');
     document.getElementById('panel-metricas').classList.toggle('hidden', tab !== 'metricas');
+    document.getElementById('panel-metas').classList.toggle('hidden', tab !== 'metas');
+    document.getElementById('panel-ajustes').classList.toggle('hidden', tab !== 'ajustes');
     document.querySelectorAll('.tab-item').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+    document.getElementById('fab-btn').classList.toggle('hidden', tab === 'metricas' || tab === 'ajustes');
+    if (tab === 'ajustes') renderAjustes();
+  }
+
+  function renderAjustes() {
+    const el = document.getElementById('ajustes-mode');
+    if (el) el.textContent = DB.mode === 'supabase' ? 'Sincronizado con Supabase' : 'Local (solo este dispositivo)';
+  }
+
+  function handleFabClick() {
+    if (state.activeTab === 'metas') openGoalSheet();
+    else openSheet();
   }
 
   // ── Resumen: balance + lista ─────────────────────────────────────────────
@@ -285,15 +321,227 @@ const App = (() => {
     switchTab('resumen');
   }
 
-  async function confirmDelete(t) {
-    const ok = await confirmDialog(`¿Eliminar "${categoryById(t.category).label}" — ${t.type === 'ingreso' ? '+' : '−'}${formatCOP(t.amount)}?`);
+  // ── Metas ────────────────────────────────────────────────────────────────
+  function renderGoals() {
+    const container = document.getElementById('goals-content');
+    if (!container) return;
+
+    if (state.goals.length === 0) {
+      container.innerHTML = `<div class="empty-state"><div class="empty-icon">🎯</div><p>Aún no tienes metas.<br>Toca “+” para crear tu primera meta de ahorro,<br>reducción de gasto o inversión.</p></div>`;
+      return;
+    }
+
+    container.innerHTML = state.goals.map((g) => goalCardHtml(g)).join('');
+  }
+
+  function goalCardHtml(g) {
+    const icon = GOAL_TYPE_ICON[g.type] || '🎯';
+    const target = Number(g.target_amount);
+
+    if (g.type === 'reduccion') {
+      const spent = txInMonth().filter((t) => t.type === 'egreso' && (!g.category || t.category === g.category))
+        .reduce((s, t) => s + Number(t.amount), 0);
+      const pct = target ? Math.round((spent / target) * 100) : 0;
+      const over = spent > target;
+      const statusText = over
+        ? `Te pasaste por ${formatCOP(spent - target)}`
+        : `Te quedan ${formatCOP(target - spent)} este mes`;
+      return `
+        <div class="goal-card">
+          <div class="goal-card-top" onclick="App.openEditGoalSheet('${g.id}')">
+            <div class="goal-icon ${g.type}">${icon}</div>
+            <div class="goal-info">
+              <div class="goal-title">${escapeHtml(g.title)}</div>
+              <div class="goal-sub">${goalCategoryLabel(g.category)} · por mes</div>
+            </div>
+            <div class="goal-pct ${over ? 'over' : ''}">${pct}%</div>
+          </div>
+          <div class="goal-bar-track"><div class="goal-bar-fill ${over ? 'over' : ''}" style="width:${Math.min(pct, 100)}%"></div></div>
+          <div class="goal-bottom">
+            <span class="goal-amounts">${formatCOP(spent)} de ${formatCOP(target)}</span>
+          </div>
+          <div class="goal-status ${over ? 'over' : 'ok'}">${statusText}</div>
+        </div>`;
+    }
+
+    const current = Number(g.current_amount) || 0;
+    const pct = target ? Math.round((current / target) * 100) : 0;
+    const sub = g.target_date ? `Meta para el ${formatDateShort(g.target_date)}` : GOAL_TYPE_LABEL[g.type];
+    return `
+      <div class="goal-card">
+        <div class="goal-card-top" onclick="App.openEditGoalSheet('${g.id}')">
+          <div class="goal-icon ${g.type}">${icon}</div>
+          <div class="goal-info">
+            <div class="goal-title">${escapeHtml(g.title)}</div>
+            <div class="goal-sub">${sub}</div>
+          </div>
+          <div class="goal-pct">${pct}%</div>
+        </div>
+        <div class="goal-bar-track"><div class="goal-bar-fill ${g.type}" style="width:${Math.min(pct, 100)}%"></div></div>
+        <div class="goal-bottom">
+          <span class="goal-amounts">${formatCOP(current)} de ${formatCOP(target)}</span>
+          <button class="goal-add-btn" onclick="event.stopPropagation(); App.addContribution('${g.id}')">+ Agregar</button>
+        </div>
+      </div>`;
+  }
+
+  async function addContribution(goalId) {
+    const g = state.goals.find((x) => x.id === goalId);
+    if (!g) return;
+    const amount = await promptAmount(`¿Cuánto quieres agregar a "${g.title}"?`, 'Agregar');
+    if (!amount) return;
+    try {
+      await DB.updateGoal(goalId, { current_amount: (Number(g.current_amount) || 0) + amount });
+      await loadGoals();
+      renderGoals();
+      toast(`+${formatCOP(amount)} agregado a "${g.title}"`);
+    } catch (e) { console.error(e); toast('No se pudo actualizar la meta'); }
+  }
+
+  function openGoalSheet() {
+    state.editingGoalId = null;
+    state.goalType = 'ahorro';
+    state.goalTitle = '';
+    state.goalAmount = '';
+    state.goalCategory = '';
+    state.goalDate = '';
+    document.getElementById('goal-sheet-title').textContent = 'Nueva meta';
+    document.getElementById('goal-delete-btn').classList.add('hidden');
+    document.getElementById('goal-save-btn').textContent = 'Guardar meta';
+    document.getElementById('goal-title-input').value = '';
+    document.getElementById('goal-date-input').value = '';
+    document.getElementById('goal-sheet-overlay').classList.remove('hidden');
+    renderGoalSheet();
+  }
+
+  function openEditGoalSheet(id) {
+    const g = state.goals.find((x) => x.id === id);
+    if (!g) return;
+    state.editingGoalId = g.id;
+    state.goalType = g.type;
+    state.goalTitle = g.title;
+    state.goalAmount = String(Math.round(Number(g.target_amount)));
+    state.goalCategory = g.category || '';
+    state.goalDate = g.target_date || '';
+    document.getElementById('goal-sheet-title').textContent = 'Editar meta';
+    document.getElementById('goal-delete-btn').classList.remove('hidden');
+    document.getElementById('goal-save-btn').textContent = 'Guardar cambios';
+    document.getElementById('goal-title-input').value = g.title;
+    document.getElementById('goal-date-input').value = g.target_date || '';
+    document.getElementById('goal-sheet-overlay').classList.remove('hidden');
+    renderGoalSheet();
+  }
+
+  function closeGoalSheet() {
+    document.getElementById('goal-sheet-overlay').classList.add('hidden');
+  }
+
+  function setGoalType(type) {
+    state.goalType = type;
+    renderGoalSheet();
+  }
+
+  function setGoalCategory(id) {
+    state.goalCategory = id;
+    renderGoalSheet();
+  }
+
+  function onGoalTitleInput(v) { state.goalTitle = v.slice(0, 60); renderGoalSheet(true); }
+  function onGoalAmountInput(raw) { state.goalAmount = raw.replace(/[^\d]/g, ''); renderGoalSheet(true); }
+  function onGoalDateInput(v) { state.goalDate = v; }
+
+  const GOAL_CAPTIONS = {
+    ahorro: 'Meta de ahorro · COP',
+    reduccion: 'Límite mensual de gasto · COP',
+    inversion: 'Meta de inversión · COP'
+  };
+
+  function renderGoalSheet(skipAmountRefocus) {
+    const toggle = document.getElementById('goal-type-toggle');
+    toggle.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.type === state.goalType));
+
+    document.getElementById('goal-amount-caption').textContent = GOAL_CAPTIONS[state.goalType];
+    document.getElementById('goal-amount-row').className = 'amount-row ' + state.goalType;
+
+    const amountInput = document.getElementById('goal-amount-input');
+    const formatted = state.goalAmount ? Number(state.goalAmount).toLocaleString('es-CO') : '0';
+    if (!skipAmountRefocus || document.activeElement !== amountInput) amountInput.value = formatted;
+    amountInput.style.width = (formatted.length + 1) + 'ch';
+    amountInput.classList.toggle('filled', !!state.goalAmount && Number(state.goalAmount) > 0);
+
+    document.getElementById('goal-category-block').classList.toggle('hidden', state.goalType !== 'reduccion');
+    document.getElementById('goal-date-block').classList.toggle('hidden', state.goalType === 'reduccion');
+
+    if (state.goalType === 'reduccion') {
+      const grid = document.getElementById('goal-category-grid');
+      grid.innerHTML = '';
+      const allOption = { id: '', label: 'Todas', icon: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>' };
+      [allOption, ...window.CATEGORIES].forEach((c) => {
+        const btn = document.createElement('button');
+        btn.className = 'category-pill' + (c.id === state.goalCategory ? ' selected' : '');
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${c.icon}</svg><span>${c.label}</span>`;
+        btn.addEventListener('click', () => setGoalCategory(c.id));
+        grid.appendChild(btn);
+      });
+    }
+
+    const valid = state.goalTitle.trim() && state.goalAmount && Number(state.goalAmount) > 0;
+    document.getElementById('goal-save-btn').disabled = !valid;
+  }
+
+  async function saveGoal() {
+    const amount = Number(state.goalAmount);
+    const title = state.goalTitle.trim();
+    if (!title || !amount || amount <= 0) return;
+    const btn = document.getElementById('goal-save-btn');
+    const wasEditing = !!state.editingGoalId;
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+    const patch = {
+      type: state.goalType,
+      title,
+      target_amount: amount,
+      category: state.goalType === 'reduccion' ? (state.goalCategory || null) : null,
+      target_date: state.goalType !== 'reduccion' && state.goalDate ? state.goalDate : null
+    };
+    try {
+      if (wasEditing) await DB.updateGoal(state.editingGoalId, patch);
+      else await DB.addGoal(patch);
+      await loadGoals();
+      renderGoals();
+      closeGoalSheet();
+      toast(wasEditing ? 'Meta actualizada' : 'Meta creada');
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo guardar la meta. Intenta de nuevo.');
+    } finally {
+      btn.textContent = wasEditing ? 'Guardar cambios' : 'Guardar meta';
+      renderGoalSheet();
+    }
+  }
+
+  async function deleteGoalFromSheet() {
+    if (!state.editingGoalId) return;
+    const ok = await confirmDialog('¿Eliminar esta meta? Esta acción no se puede deshacer.');
     if (!ok) return;
     try {
-      await DB.deleteTransaction(t.id);
-      await loadTransactions();
-      renderAll();
-      toast('Transacción eliminada');
+      await DB.deleteGoal(state.editingGoalId);
+      await loadGoals();
+      renderGoals();
+      closeGoalSheet();
+      toast('Meta eliminada');
     } catch (e) { console.error(e); toast('No se pudo eliminar'); }
+  }
+
+  // ── Exportar a Excel ─────────────────────────────────────────────────────
+  function exportExcel() {
+    try {
+      Export.transactionsToExcel(state.transactions);
+      toast('Descargando Excel…');
+    } catch (e) {
+      console.error(e);
+      toast(e.message || 'No se pudo exportar');
+    }
   }
 
   // ── Month navigation ─────────────────────────────────────────────────────
@@ -368,6 +616,7 @@ const App = (() => {
     const amountInput = document.getElementById('amount-input');
     const formatted = state.formAmount ? Number(state.formAmount).toLocaleString('es-CO') : '0';
     if (!skipAmountRefocus || document.activeElement !== amountInput) amountInput.value = formatted;
+    amountInput.style.width = (formatted.length + 1) + 'ch';
     amountInput.classList.toggle('filled', !!state.formAmount && Number(state.formAmount) > 0);
 
     document.getElementById('date-label').textContent = formatDateHuman(state.formDate);
@@ -480,6 +729,40 @@ const App = (() => {
     return new Promise((resolve) => { confirmResolve = resolve; });
   }
 
+  // ── Prompt dialog (monto — usado para aportes a metas) ───────────────────
+  let promptResolve = null;
+  function bindPromptDialogButtons() {
+    const input = document.getElementById('prompt-input');
+    input.addEventListener('input', () => {
+      const digits = input.value.replace(/[^\d]/g, '');
+      input.value = digits ? Number(digits).toLocaleString('es-CO') : '';
+    });
+    document.getElementById('prompt-ok').addEventListener('click', () => resolvePrompt(true));
+    document.getElementById('prompt-cancel').addEventListener('click', () => resolvePrompt(false));
+    document.getElementById('prompt-overlay').addEventListener('click', (e) => {
+      if (e.target.id === 'prompt-overlay') resolvePrompt(false);
+    });
+  }
+  function resolvePrompt(confirmed) {
+    const overlay = document.getElementById('prompt-overlay');
+    const input = document.getElementById('prompt-input');
+    const digits = input.value.replace(/[^\d]/g, '');
+    overlay.classList.add('hidden');
+    if (promptResolve) {
+      const r = promptResolve;
+      promptResolve = null;
+      r(confirmed && digits ? Number(digits) : null);
+    }
+  }
+  function promptAmount(message, okLabel) {
+    document.getElementById('prompt-message').textContent = message;
+    document.getElementById('prompt-ok').textContent = okLabel || 'Agregar';
+    document.getElementById('prompt-input').value = '';
+    document.getElementById('prompt-overlay').classList.remove('hidden');
+    setTimeout(() => document.getElementById('prompt-input').focus(), 50);
+    return new Promise((resolve) => { promptResolve = resolve; });
+  }
+
   // ── Toast ────────────────────────────────────────────────────────────────
   let toastTimer = null;
   function toast(msg) {
@@ -491,9 +774,13 @@ const App = (() => {
   }
 
   return {
-    init, prevMonth, nextMonth, switchTab, jumpToMonth,
+    init, prevMonth, nextMonth, switchTab, jumpToMonth, handleFabClick,
     openSheet, openEditSheet, closeSheet, deleteFromSheet, setType, setCategory,
-    shiftFormDate, onAmountInput, onNoteInput, saveTransaction, sendMagicLink, signOut
+    shiftFormDate, onAmountInput, onNoteInput, saveTransaction,
+    openGoalSheet, openEditGoalSheet, closeGoalSheet, setGoalType,
+    onGoalTitleInput, onGoalAmountInput, onGoalDateInput, saveGoal,
+    deleteGoalFromSheet, addContribution, exportExcel,
+    sendMagicLink, signOut
   };
 })();
 

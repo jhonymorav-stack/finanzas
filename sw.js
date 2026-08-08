@@ -1,7 +1,8 @@
-const CACHE = 'finanzas-v1';
+const CACHE = 'finanzas-v2';
 const ASSETS = [
   '/', '/index.html', '/css/style.css',
-  '/js/config.js', '/js/supabase-client.js', '/js/rates.js', '/js/app.js'
+  '/js/config.js', '/js/categories.js', '/js/db.js', '/js/rates.js',
+  '/js/export.js', '/js/app.js'
 ];
 
 self.addEventListener('install', (e) => {

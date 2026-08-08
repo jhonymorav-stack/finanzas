@@ -89,6 +89,18 @@ Sin esto, la app funciona en **modo local** (guarda solo en ese navegador,
   editarla o eliminarla.
 - **Métricas**: desglose de gastos por categoría (con barras y %) y gráfico
   de egresos de los últimos 6 meses — toca cualquier mes para saltar a él.
+- **Metas** (pestaña dedicada): tres tipos —
+  - *Ahorro* e *Inversión*: defines un monto objetivo y una fecha opcional;
+    vas agregando aportes manuales con el botón "+ Agregar" y ves el
+    progreso en barra + %.
+  - *Reducción de gastos*: defines un límite mensual (de una categoría
+    específica o de todas), y la app calcula automáticamente cuánto llevas
+    gastado ese mes a partir de tus transacciones reales — sin que tengas
+    que actualizar nada a mano.
+  - Toca cualquier meta para editarla o eliminarla.
+- **Exportar a Excel** (pestaña Ajustes): descarga un `.xlsx` con dos hojas
+  — resumen mensual (ingresos/egresos/neto) y el detalle completo de todas
+  tus transacciones.
 - **Navegación por mes** con flechas `<` `>` en la parte superior.
 
 ## Estructura del proyecto
@@ -102,8 +114,9 @@ finanzas/
 ├── js/
 │   ├── config.js            ← AQUÍ van tus claves de Supabase
 │   ├── categories.js         Categorías + iconos
-│   ├── db.js                  Capa de datos (Supabase o localStorage)
+│   ├── db.js                  Capa de datos (transacciones + metas)
 │   ├── rates.js                Tasa de cambio COP → USD
-│   └── app.js                   Lógica de la interfaz
-└── supabase/schema.sql     SQL para crear la tabla + seguridad
+│   ├── export.js                Exportar a Excel (SheetJS)
+│   └── app.js                    Lógica de la interfaz
+└── supabase/schema.sql     SQL para crear las tablas (transactions + goals) + seguridad
 ```

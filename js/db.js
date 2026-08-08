@@ -6,7 +6,8 @@
 const DB = (() => {
   const cfg = window.FINANZAS_CONFIG || {};
   const configured = !!(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY);
-  const LOCAL_KEY = 'finanzas_transactions_v1';
+  const TX_KEY = 'finanzas_transactions_v1';
+  const GOALS_KEY = 'finanzas_goals_v1';
 
   let client = null;
   if (configured && window.supabase) {
@@ -14,12 +15,12 @@ const DB = (() => {
   }
 
   // ── Modo local (sin backend) ──────────────────────────────────────────────
-  function localList() {
-    try { return JSON.parse(localStorage.getItem(LOCAL_KEY)) || []; }
+  function localList(key) {
+    try { return JSON.parse(localStorage.getItem(key)) || []; }
     catch { return []; }
   }
-  function localSave(list) {
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(list));
+  function localSave(key, list) {
+    localStorage.setItem(key, JSON.stringify(list));
   }
 
   return {
@@ -55,7 +56,7 @@ const DB = (() => {
     // ── Transacciones ────────────────────────────────────────────────────
     async listTransactions() {
       if (!configured) {
-        return localList().sort((a, b) => b.tx_date.localeCompare(a.tx_date) || b.created_at.localeCompare(a.created_at));
+        return localList(TX_KEY).sort((a, b) => b.tx_date.localeCompare(a.tx_date) || b.created_at.localeCompare(a.created_at));
       }
       const { data, error } = await client
         .from('transactions')
@@ -68,10 +69,10 @@ const DB = (() => {
 
     async addTransaction(tx) {
       if (!configured) {
-        const list = localList();
+        const list = localList(TX_KEY);
         const row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), ...tx };
         list.push(row);
-        localSave(list);
+        localSave(TX_KEY, list);
         return row;
       }
       const { data: sessionData } = await client.auth.getSession();
@@ -87,11 +88,11 @@ const DB = (() => {
 
     async updateTransaction(id, patch) {
       if (!configured) {
-        const list = localList();
+        const list = localList(TX_KEY);
         const idx = list.findIndex((t) => t.id === id);
         if (idx === -1) throw new Error('Transacción no encontrada');
         list[idx] = { ...list[idx], ...patch };
-        localSave(list);
+        localSave(TX_KEY, list);
         return list[idx];
       }
       const { data, error } = await client
@@ -106,10 +107,70 @@ const DB = (() => {
 
     async deleteTransaction(id) {
       if (!configured) {
-        localSave(localList().filter((t) => t.id !== id));
+        localSave(TX_KEY, localList(TX_KEY).filter((t) => t.id !== id));
         return;
       }
       const { error } = await client.from('transactions').delete().eq('id', id);
+      if (error) throw error;
+    },
+
+    // ── Metas (ahorro / reducción de gastos / inversión) ───────────────────
+    async listGoals() {
+      if (!configured) {
+        return localList(GOALS_KEY).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+      }
+      const { data, error } = await client
+        .from('goals')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+
+    async addGoal(goal) {
+      if (!configured) {
+        const list = localList(GOALS_KEY);
+        const row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), current_amount: 0, ...goal };
+        list.push(row);
+        localSave(GOALS_KEY, list);
+        return row;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      const user_id = sessionData.session?.user?.id;
+      const { data, error } = await client
+        .from('goals')
+        .insert({ ...goal, user_id })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+
+    async updateGoal(id, patch) {
+      if (!configured) {
+        const list = localList(GOALS_KEY);
+        const idx = list.findIndex((g) => g.id === id);
+        if (idx === -1) throw new Error('Meta no encontrada');
+        list[idx] = { ...list[idx], ...patch };
+        localSave(GOALS_KEY, list);
+        return list[idx];
+      }
+      const { data, error } = await client
+        .from('goals')
+        .update(patch)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+
+    async deleteGoal(id) {
+      if (!configured) {
+        localSave(GOALS_KEY, localList(GOALS_KEY).filter((g) => g.id !== id));
+        return;
+      }
+      const { error } = await client.from('goals').delete().eq('id', id);
       if (error) throw error;
     }
   };
