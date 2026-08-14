@@ -13,7 +13,7 @@ const App = (() => {
     customAccounts: [],
     budgets: {}, // { categoryId: monthlyAmount }
     currentMonth: startOfMonth(new Date()),
-    activeTab: 'resumen',
+    activeTab: 'hoy',
     rate: null,
     // sheet/form state — transacción
     editingId: null,
@@ -39,7 +39,17 @@ const App = (() => {
     // perfil
     profile: {},
     profileFormName: '',
-    profileFormAge: ''
+    profileFormAge: '',
+    // hábitos
+    habits: [],
+    habitLogs: [],       // filas { habit_id, log_date } de los últimos ~90 días
+    // running
+    runningBlocks: [],   // filas { id, day_number, sort_order, text }
+    runningCompletions: [], // filas { block_id, done_date } de los últimos ~30 días
+    freeRuns: [],
+    runningMode: 'programa', // 'programa' | 'libre'
+    runningDay: 1,            // 1-4, elegido a mano por el usuario
+    runningEditing: false
   };
 
   // ── Date helpers ─────────────────────────────────────────────────────────
@@ -118,7 +128,10 @@ const App = (() => {
 
   // ── Init ─────────────────────────────────────────────────────────────────
   function loadAll() {
-    return Promise.all([loadTransactions(), loadGoals(), loadCategories(), loadAccounts(), loadBudgets(), loadProfile()]);
+    return Promise.all([
+      loadTransactions(), loadGoals(), loadCategories(), loadAccounts(), loadBudgets(), loadProfile(),
+      loadHabits(), loadHabitLogs(), loadRunningBlocks(), loadRunningCompletions(), loadFreeRuns()
+    ]).then(seedRunningProgramIfNeeded);
   }
 
   async function init() {
@@ -175,19 +188,423 @@ const App = (() => {
     catch (e) { console.error(e); }
   }
 
+  async function loadHabits() {
+    try { state.habits = await DB.listHabits(); }
+    catch (e) { console.error(e); }
+  }
+
+  async function loadHabitLogs() {
+    try { state.habitLogs = await DB.listHabitLogs(addDaysISO(todayISO(), -90)); }
+    catch (e) { console.error(e); }
+  }
+
+  async function loadRunningBlocks() {
+    try { state.runningBlocks = await DB.listRunningBlocks(); }
+    catch (e) { console.error(e); }
+  }
+
+  async function loadRunningCompletions() {
+    try { state.runningCompletions = await DB.listRunningCompletions(addDaysISO(todayISO(), -30)); }
+    catch (e) { console.error(e); }
+  }
+
+  async function loadFreeRuns() {
+    try { state.freeRuns = await DB.listFreeRuns(); }
+    catch (e) { console.error(e); }
+  }
+
+  // La primera vez que alguien entra, precarga tu programa real de running
+  // (Fase 1, Días 1-3 — el Día 4 repite el Día 2) para que Entreno no arranque vacío.
+  // Se marca con running_seeded=true para no volver a insertar si luego borras todo a propósito.
+  async function seedRunningProgramIfNeeded() {
+    if (state.profile.running_seeded) return;
+    if (state.runningBlocks.length > 0) {
+      await DB.upsertProfile({ running_seeded: true });
+      state.profile.running_seeded = true;
+      return;
+    }
+    const seed = {
+      1: [
+        '10 min de caminata a 5.5',
+        '3 min de trote a 6.0 + 2 min de caminata a 4.0. Repetir 5 veces.',
+        '5 min de caminata a 5.0'
+      ],
+      2: [
+        'Técnica de carrera: elevación de rodillas 30 seg a 5.0. Repetir 10 veces + 30 seg caminando entre cada una.',
+        '1 min de trote a 8.0 + 2 min de caminata a 5.5. Repetir 15 veces.',
+        '10 min de caminata a 5.5'
+      ],
+      3: [
+        '5 min de caminata a 5.5',
+        '5 min de trote a 6.0 con 2 min de descanso total. Repetir 4 veces.',
+        '5 min de caminata a 5.5'
+      ]
+    };
+    try {
+      for (const dayNumber of [1, 2, 3]) {
+        let order = 0;
+        for (const text of seed[dayNumber]) {
+          await DB.addRunningBlock({ day_number: dayNumber, sort_order: order++, text });
+        }
+      }
+      await DB.upsertProfile({ running_seeded: true });
+      state.profile.running_seeded = true;
+      state.runningBlocks = await DB.listRunningBlocks();
+    } catch (e) { console.error(e); }
+  }
+
   // ── Render dispatcher ────────────────────────────────────────────────────
   function render() {
     document.getElementById('auth-screen').classList.toggle('hidden', !!state.session);
     document.getElementById('app-shell').classList.toggle('hidden', !state.session);
-    if (state.session) renderAll();
+    if (state.session) { renderAll(); switchTab(state.activeTab); }
   }
 
   function renderAll() {
+    renderHoy();
+    renderEntreno();
     renderMonthBar();
     renderBalanceCard();
     renderTxList();
     renderMetrics();
     renderGoals();
+  }
+
+  // ── Hoy: hábitos + frase/versículo ───────────────────────────────────────
+  const CHECK_SVG = '<svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const FLAME_SVG = '<svg viewBox="0 0 16 16"><path d="M8 1c1 3-2 4-2 7a3 3 0 1 0 6 0c0-1-1-1.5-1-1.5.5 2-1 2.5-1 2.5 1-2-1-3-2-4.5C7.5 6 6 7 6 8.5 6 5 8 3 8 1z"/></svg>';
+
+  function greeting() {
+    const h = new Date().getHours();
+    if (h < 12) return 'Buenos días';
+    if (h < 19) return 'Buenas tardes';
+    return 'Buenas noches';
+  }
+
+  function habitStreak(habitId) {
+    const dates = new Set(state.habitLogs.filter((l) => l.habit_id === habitId).map((l) => l.log_date));
+    let streak = 0;
+    let cursor = todayISO();
+    // si hoy no está marcado, la racha cuenta desde ayer hacia atrás.
+    if (!dates.has(cursor)) cursor = addDaysISO(cursor, -1);
+    while (dates.has(cursor)) { streak++; cursor = addDaysISO(cursor, -1); }
+    return streak;
+  }
+
+  function renderHoy() {
+    const el = document.getElementById('hoy-content');
+    if (!el) return;
+    const today = todayISO();
+    const quote = window.quoteForDate ? window.quoteForDate(today) : '';
+    const verse = window.verseForDate ? window.verseForDate(today) : { ref: '', text: '' };
+    const doneToday = new Set(state.habitLogs.filter((l) => l.log_date === today).map((l) => l.habit_id));
+    const total = state.habits.length;
+    const done = state.habits.filter((h) => doneToday.has(h.id)).length;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+
+    el.innerHTML = `
+      <div class="hoy-head">
+        <div>
+          <div class="hoy-date">${dayGroupLabel(today).replace('HOY · ', '')}</div>
+          <h1 class="hoy-title">${greeting()}</h1>
+        </div>
+        <div class="ring" style="--pct:${pct}%"><span class="ring-label">${done}/${total || 0}</span></div>
+      </div>
+      <div class="word-card">
+        <div class="quote-row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8h4v4c0 2-1.3 3.4-4 4M13 8h4v4c0 2-1.3 3.4-4 4"/></svg><p>${escapeHtml(quote)}</p></div>
+        <hr>
+        <div class="verse-row"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H12v16H5.5A1.5 1.5 0 014 18.5v-13zM20 5.5c0-.8-.7-1.5-1.5-1.5H12v16h6.5a1.5 1.5 0 001.5-1.5v-13z"/></svg><p><b>${escapeHtml(verse.ref)}</b>${escapeHtml(verse.text)}</p></div>
+      </div>
+      <ul class="habit-list" id="habit-list"></ul>
+      <button type="button" class="add-habit-btn" id="add-habit-btn">+ agregar hábito</button>
+      <div class="section-label">Últimas 13 semanas</div>
+      <div class="heatmap" id="habit-heatmap"></div>
+    `;
+
+    const list = document.getElementById('habit-list');
+    if (total === 0) {
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><p>Todavía no tienes hábitos.<br>Toca “+ agregar hábito” para crear el primero.</p></div>`;
+    } else {
+      state.habits.forEach((h) => {
+        const isDone = doneToday.has(h.id);
+        const li = document.createElement('li');
+        li.className = 'habit' + (isDone ? ' done' : '');
+        li.innerHTML = `
+          <button class="habit-check" aria-pressed="${isDone}">${CHECK_SVG}</button>
+          <div class="habit-body">
+            <span class="habit-name">${escapeHtml(h.name)}</span>
+            ${h.meta ? `<span class="habit-meta">${escapeHtml(h.meta)}</span>` : ''}
+          </div>
+          <span class="streak">${FLAME_SVG}${habitStreak(h.id)}</span>
+          <button class="habit-remove" aria-label="Eliminar ${escapeHtml(h.name)}">&times;</button>
+        `;
+        li.querySelector('.habit-check').addEventListener('click', () => toggleHabit(h.id, isDone));
+        li.querySelector('.habit-remove').addEventListener('click', () => removeHabit(h.id, h.name));
+        list.appendChild(li);
+      });
+    }
+
+    document.getElementById('add-habit-btn').addEventListener('click', addHabitPrompt);
+    renderHabitHeatmap();
+  }
+
+  function renderHabitHeatmap() {
+    const el = document.getElementById('habit-heatmap');
+    if (!el) return;
+    el.innerHTML = '';
+    const total = state.habits.length || 1;
+    const countsByDate = {};
+    state.habitLogs.forEach((l) => { countsByDate[l.log_date] = (countsByDate[l.log_date] || 0) + 1; });
+    const today = todayISO();
+    const days = [];
+    for (let i = 90; i >= 0; i--) days.push(addDaysISO(today, -i));
+    days.forEach((iso) => {
+      const ratio = (countsByDate[iso] || 0) / total;
+      const lvl = ratio === 0 ? 0 : ratio < 0.35 ? 1 : ratio < 0.65 ? 2 : ratio < 1 ? 3 : 4;
+      const cell = document.createElement('i');
+      cell.setAttribute('data-lvl', String(lvl));
+      cell.title = iso;
+      el.appendChild(cell);
+    });
+  }
+
+  async function toggleHabit(id, wasDone) {
+    const today = todayISO();
+    try {
+      if (wasDone) { await DB.unlogHabit(id, today); state.habitLogs = state.habitLogs.filter((l) => !(l.habit_id === id && l.log_date === today)); }
+      else { await DB.logHabit(id, today); state.habitLogs.push({ habit_id: id, log_date: today }); }
+      renderHoy();
+    } catch (e) { console.error(e); toast('No se pudo actualizar el hábito'); }
+  }
+
+  async function addHabitPrompt() {
+    const name = await promptText('Nombre del hábito', 'ej. Meditar');
+    if (!name) return;
+    const meta = await promptText('Detalle (opcional)', 'ej. 10 min · respiración');
+    try {
+      const row = await DB.addHabit({ name, meta: meta || null });
+      state.habits.push(row);
+      renderHoy();
+    } catch (e) { console.error(e); toast('No se pudo agregar el hábito'); }
+  }
+
+  async function removeHabit(id, name) {
+    const ok = await confirmDialog(`¿Eliminar “${name}”? Se borra también su historial.`, 'Eliminar');
+    if (!ok) return;
+    try {
+      await DB.deleteHabit(id);
+      state.habits = state.habits.filter((h) => h.id !== id);
+      state.habitLogs = state.habitLogs.filter((l) => l.habit_id !== id);
+      renderHoy();
+    } catch (e) { console.error(e); toast('No se pudo eliminar el hábito'); }
+  }
+
+  // ── Entreno: running (programa de intervalos + carrera libre) ────────────
+  function resolvedDayNumber(day) { return day === 4 ? 2 : day; }
+
+  function blocksForDay(day) {
+    const dn = resolvedDayNumber(day);
+    return state.runningBlocks.filter((b) => b.day_number === dn).sort((a, b) => a.sort_order - b.sort_order);
+  }
+
+  function fmtPace(secsPerKm) {
+    if (!isFinite(secsPerKm) || secsPerKm <= 0) return '—';
+    const m = Math.floor(secsPerKm / 60), s = Math.round(secsPerKm % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function fmtDuration(secs) {
+    const m = Math.floor(secs / 60), s = secs % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function parseTimeToSecs(str) {
+    const parts = String(str).trim().split(':').map(Number);
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return parts[0] * 60 + parts[1];
+    const n = Number(str);
+    return isFinite(n) ? Math.round(n * 60) : 0;
+  }
+
+  function renderEntreno() {
+    const el = document.getElementById('entreno-content');
+    if (!el) return;
+    el.innerHTML = `
+      <div class="ent-head">
+        <div class="ent-date">Entreno</div>
+        <h1 class="ent-title" id="ent-title">Running</h1>
+      </div>
+      <div class="plan-switch" id="ent-mode-switch">
+        <button type="button" data-rmode="programa" aria-pressed="${state.runningMode === 'programa'}">Programa</button>
+        <button type="button" data-rmode="libre" aria-pressed="${state.runningMode === 'libre'}">Carrera libre</button>
+      </div>
+      <div id="ent-body"></div>
+    `;
+    document.querySelectorAll('#ent-mode-switch button').forEach((b) => {
+      b.addEventListener('click', () => { state.runningMode = b.dataset.rmode; renderEntreno(); });
+    });
+    if (state.runningMode === 'libre') renderRunningLibre(); else renderRunningPrograma();
+  }
+
+  function renderRunningPrograma() {
+    const body = document.getElementById('ent-body');
+    const week = state.profile.running_week || 1;
+    const totalWeeks = state.profile.running_total_weeks || 4;
+    const fase = state.profile.running_fase || 'Fase 1 · Adaptación deportiva';
+    const day = state.runningDay || 1;
+    const blocks = blocksForDay(day);
+    const today = todayISO();
+    const doneIds = new Set(state.runningCompletions.filter((c) => c.done_date === today).map((c) => c.block_id));
+    const doneCount = blocks.filter((b) => doneIds.has(b.id)).length;
+    const pct = blocks.length ? Math.round((doneCount / blocks.length) * 100) : 0;
+
+    body.innerHTML = `
+      <p class="sub">${escapeHtml(fase)}</p>
+      <div class="week-row">
+        <button type="button" class="week-btn" id="week-prev" ${week <= 1 ? 'disabled' : ''}>−</button>
+        <p class="plan-count">Semana ${week} de ${totalWeeks}</p>
+        <button type="button" class="week-btn" id="week-next" ${week >= totalWeeks ? 'disabled' : ''}>+</button>
+      </div>
+      <div class="prog-head-row">
+        <div class="day-pills" id="day-pills">
+          ${[1, 2, 3, 4].map((d) => `<button type="button" data-day="${d}" aria-pressed="${d === day}">Día ${d}</button>`).join('')}
+        </div>
+        <button type="button" class="edit-plan-btn" id="edit-prog-btn" aria-pressed="${state.runningEditing}" aria-label="Editar bloques">
+          <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M17 3a2.85 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
+        </button>
+      </div>
+      <div class="warmup-row">
+        <span class="warmup-pill">Movilidad</span><span class="warmup-pill">Activación muscular</span><span class="warmup-pill">Preparación</span>
+      </div>
+      ${day === 4 ? '<p class="prog-repeat-note">Este día repite exactamente el Día 2 — edítalo desde ahí.</p>' : ''}
+      <div class="prog-today-row">
+        <p>${doneCount}/${blocks.length} bloques</p>
+        <div class="ring ring-sm" style="--pct:${pct}%"><span class="ring-label">${doneCount}/${blocks.length}</span></div>
+      </div>
+      <ul class="habit-list" id="prog-blocks"></ul>
+      <button type="button" class="add-blk-btn${state.runningEditing ? ' show' : ''}" id="add-blk-btn">+ agregar bloque</button>
+    `;
+
+    const list = document.getElementById('prog-blocks');
+    if (blocks.length === 0) {
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon">🏃</div><p>Sin bloques para este día todavía.</p></div>`;
+    } else {
+      blocks.forEach((b) => {
+        const isDone = doneIds.has(b.id);
+        const li = document.createElement('li');
+        li.className = 'habit' + (isDone ? ' done' : '');
+        li.innerHTML = `
+          <button class="habit-check" aria-pressed="${isDone}">${CHECK_SVG}</button>
+          <div class="habit-body"><span class="habit-name blk-text">${escapeHtml(b.text)}</span></div>
+          <button class="blk-remove" aria-label="Quitar bloque">&times;</button>
+        `;
+        li.querySelector('.habit-check').addEventListener('click', () => toggleBlock(b.id, isDone));
+        li.querySelector('.blk-remove').addEventListener('click', () => removeBlock(b.id));
+        list.appendChild(li);
+      });
+    }
+    list.classList.toggle('editing-prog', state.runningEditing);
+
+    document.querySelectorAll('#day-pills button').forEach((btn) => {
+      btn.addEventListener('click', () => { state.runningDay = Number(btn.dataset.day); renderRunningPrograma(); });
+    });
+    document.getElementById('edit-prog-btn').addEventListener('click', () => { state.runningEditing = !state.runningEditing; renderRunningPrograma(); });
+    document.getElementById('add-blk-btn').addEventListener('click', () => addBlockPrompt(day));
+    document.getElementById('week-prev').addEventListener('click', () => shiftRunningWeek(-1));
+    document.getElementById('week-next').addEventListener('click', () => shiftRunningWeek(1));
+  }
+
+  async function toggleBlock(blockId, wasDone) {
+    const today = todayISO();
+    try {
+      if (wasDone) { await DB.unmarkBlockDone(blockId, today); state.runningCompletions = state.runningCompletions.filter((c) => !(c.block_id === blockId && c.done_date === today)); }
+      else { await DB.markBlockDone(blockId, today); state.runningCompletions.push({ block_id: blockId, done_date: today }); }
+      renderRunningPrograma();
+    } catch (e) { console.error(e); toast('No se pudo actualizar el bloque'); }
+  }
+
+  async function addBlockPrompt(day) {
+    const text = await promptText('Describe el bloque', 'ej. 5 min de trote a 6.0. Repetir 4 veces.');
+    if (!text) return;
+    const dn = resolvedDayNumber(day);
+    try {
+      const row = await DB.addRunningBlock({ day_number: dn, sort_order: blocksForDay(day).length, text });
+      state.runningBlocks.push(row);
+      renderRunningPrograma();
+    } catch (e) { console.error(e); toast('No se pudo agregar el bloque'); }
+  }
+
+  async function removeBlock(blockId) {
+    const ok = await confirmDialog('¿Quitar este bloque del plan?', 'Quitar');
+    if (!ok) return;
+    try {
+      await DB.deleteRunningBlock(blockId);
+      state.runningBlocks = state.runningBlocks.filter((b) => b.id !== blockId);
+      renderRunningPrograma();
+    } catch (e) { console.error(e); toast('No se pudo quitar el bloque'); }
+  }
+
+  async function shiftRunningWeek(delta) {
+    const totalWeeks = state.profile.running_total_weeks || 4;
+    const next = Math.min(totalWeeks, Math.max(1, (state.profile.running_week || 1) + delta));
+    if (next === state.profile.running_week) return;
+    state.profile.running_week = next;
+    renderRunningPrograma();
+    try { await DB.upsertProfile({ running_week: next }); }
+    catch (e) { console.error(e); toast('No se pudo guardar la semana'); }
+  }
+
+  function renderRunningLibre() {
+    const body = document.getElementById('ent-body');
+    const today = todayISO();
+    const weekAgo = addDaysISO(today, -7);
+    const weekRuns = state.freeRuns.filter((r) => r.run_date >= weekAgo);
+    const weekKm = weekRuns.reduce((s, r) => s + Number(r.km), 0);
+    const totalSecs = weekRuns.reduce((s, r) => s + Number(r.duration_seconds), 0);
+    const avgPace = weekKm ? fmtPace(totalSecs / weekKm) : '—';
+
+    body.innerHTML = `
+      <div class="stat-row">
+        <div class="stat-tile"><span class="v">${weekKm.toFixed(1)}</span><span class="k">km esta semana</span></div>
+        <div class="stat-tile"><span class="v">${weekRuns.length}</span><span class="k">carreras</span></div>
+        <div class="stat-tile"><span class="v">${avgPace}</span><span class="k">ritmo prom. /km</span></div>
+      </div>
+      <button type="button" class="save-run-btn" id="add-run-btn">+ registrar carrera</button>
+      <p class="section-label">Historial</p>
+      <div id="run-history"></div>
+    `;
+    const hist = document.getElementById('run-history');
+    if (state.freeRuns.length === 0) {
+      hist.innerHTML = `<div class="empty-state"><div class="empty-icon">🏃</div><p>Todavía no registras carreras libres.</p></div>`;
+    } else {
+      state.freeRuns.slice(0, 20).forEach((r) => {
+        const pace = fmtPace(r.duration_seconds / r.km);
+        const row = document.createElement('div');
+        row.className = 'run-row';
+        row.innerHTML = `
+          <span class="rdate">${formatDateShort(r.run_date)}</span>
+          <div class="rbody"><span class="rdist">${Number(r.km).toFixed(1)} km</span><span class="rmeta">${fmtDuration(r.duration_seconds)} · ${pace} /km</span></div>
+          <span class="rterrain">${escapeHtml(r.terrain || 'Asfalto')}</span>
+        `;
+        hist.appendChild(row);
+      });
+    }
+    document.getElementById('add-run-btn').addEventListener('click', addFreeRunPrompt);
+  }
+
+  async function addFreeRunPrompt() {
+    const kmStr = await promptValue('Distancia (km)', { type: 'text', placeholder: '5.0', okLabel: 'Siguiente' });
+    if (!kmStr) return;
+    const km = parseFloat(String(kmStr).replace(',', '.'));
+    if (!km || km <= 0) { toast('Distancia inválida'); return; }
+    const timeStr = await promptValue('Tiempo (mm:ss)', { type: 'text', placeholder: '28:00', okLabel: 'Siguiente' });
+    if (!timeStr) return;
+    const secs = parseTimeToSecs(timeStr);
+    if (!secs || secs <= 0) { toast('Tiempo inválido'); return; }
+    const terrainStr = await promptValue('Terreno', { type: 'text', placeholder: 'Asfalto / Trail / Pista / Cinta', defaultValue: 'Asfalto', okLabel: 'Guardar carrera' });
+    try {
+      const row = await DB.addFreeRun({ run_date: todayISO(), km, duration_seconds: secs, terrain: terrainStr || 'Asfalto' });
+      state.freeRuns.unshift(row);
+      renderRunningLibre();
+      toast('Carrera guardada');
+    } catch (e) { console.error(e); toast('No se pudo guardar la carrera'); }
   }
 
   function renderMonthBar() {
@@ -207,12 +624,14 @@ const App = (() => {
   // ── Tabs ─────────────────────────────────────────────────────────────────
   function switchTab(tab) {
     state.activeTab = tab;
+    document.getElementById('panel-hoy').classList.toggle('hidden', tab !== 'hoy');
+    document.getElementById('panel-entreno').classList.toggle('hidden', tab !== 'entreno');
     document.getElementById('panel-resumen').classList.toggle('hidden', tab !== 'resumen');
     document.getElementById('panel-metricas').classList.toggle('hidden', tab !== 'metricas');
     document.getElementById('panel-metas').classList.toggle('hidden', tab !== 'metas');
     document.getElementById('panel-ajustes').classList.toggle('hidden', tab !== 'ajustes');
     document.querySelectorAll('.tab-item').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
-    document.getElementById('fab-btn').classList.toggle('hidden', tab === 'metricas' || tab === 'ajustes');
+    document.getElementById('fab-btn').classList.toggle('hidden', tab === 'hoy' || tab === 'entreno' || tab === 'metricas' || tab === 'ajustes');
     if (tab === 'ajustes') renderAjustes();
   }
 
