@@ -137,6 +137,7 @@ const App = (() => {
   async function init() {
     bindConfirmDialogButtons();
     bindPromptDialogButtons();
+    applyTheme(getStoredTheme());
     Rates.refresh().then((r) => { state.rate = r; renderAll(); });
 
     if (DB.isConfigured) {
@@ -194,7 +195,9 @@ const App = (() => {
   }
 
   async function loadHabitLogs() {
-    try { state.habitLogs = await DB.listHabitLogs(addDaysISO(todayISO(), -90)); }
+    // 180 días = margen para navegar varios meses atrás en el calendario de Hoy
+    // sin tener que ir a pedir más datos cada vez que cambias de mes.
+    try { state.habitLogs = await DB.listHabitLogs(addDaysISO(todayISO(), -180)); }
     catch (e) { console.error(e); }
   }
 
@@ -216,7 +219,17 @@ const App = (() => {
   // La primera vez que alguien entra, precarga tu programa real de running
   // (Fase 1, Días 1-3 — el Día 4 repite el Día 2) para que Entreno no arranque vacío.
   // Se marca con running_seeded=true para no volver a insertar si luego borras todo a propósito.
+  //
+  // NOTA: init() puede llamar a loadAll() dos veces en el mismo login (una vez al
+  // pedir la sesión directo, y otra vez por el callback de onAuthChange) — sin este
+  // guardado en memoria, esta función se ejecutaría dos veces en paralelo y
+  // duplicaría los bloques (esto pasó una vez: 9 bloques reales → 18 duplicados).
+  // El guardado es síncrono (sin await antes de fijarlo) así que la segunda llamada
+  // siempre ve runningSeedAttempted=true y sale de inmediato.
+  let runningSeedAttempted = false;
   async function seedRunningProgramIfNeeded() {
+    if (runningSeedAttempted) return;
+    runningSeedAttempted = true;
     if (state.profile.running_seeded) return;
     if (state.runningBlocks.length > 0) {
       await DB.upsertProfile({ running_seeded: true });
@@ -317,8 +330,8 @@ const App = (() => {
       </div>
       <ul class="habit-list" id="habit-list"></ul>
       <button type="button" class="add-habit-btn" id="add-habit-btn">+ agregar hábito</button>
-      <div class="section-label">Últimas 13 semanas</div>
-      <div class="heatmap" id="habit-heatmap"></div>
+      <div class="section-label">Avance diario</div>
+      <div id="habit-heatmap"></div>
     `;
 
     const list = document.getElementById('habit-list');
@@ -348,24 +361,50 @@ const App = (() => {
     renderHabitHeatmap();
   }
 
+  // Calendario del mes (no una franja de semanas) para que se vea el avance día a
+  // día. Se puede navegar mes a mes; no deja ir más adelante del mes actual.
   function renderHabitHeatmap() {
     const el = document.getElementById('habit-heatmap');
     if (!el) return;
-    el.innerHTML = '';
+    const monthDate = state.habitCalendarMonth || (state.habitCalendarMonth = startOfMonth(new Date()));
     const total = state.habits.length || 1;
     const countsByDate = {};
     state.habitLogs.forEach((l) => { countsByDate[l.log_date] = (countsByDate[l.log_date] || 0) + 1; });
+
+    const year = monthDate.getFullYear(), month = monthDate.getMonth();
+    const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7; // 0 = lunes
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
     const today = todayISO();
-    const days = [];
-    for (let i = 90; i >= 0; i--) days.push(addDaysISO(today, -i));
-    days.forEach((iso) => {
+    const atCurrentMonth = monthDate.getTime() === startOfMonth(new Date()).getTime();
+
+    let cellsHTML = '';
+    for (let i = 0; i < firstWeekday; i++) cellsHTML += `<i class="cal-empty"></i>`;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const isFuture = iso > today;
       const ratio = (countsByDate[iso] || 0) / total;
-      const lvl = ratio === 0 ? 0 : ratio < 0.35 ? 1 : ratio < 0.65 ? 2 : ratio < 1 ? 3 : 4;
-      const cell = document.createElement('i');
-      cell.setAttribute('data-lvl', String(lvl));
-      cell.title = iso;
-      el.appendChild(cell);
-    });
+      const lvl = !countsByDate[iso] ? 0 : ratio < 0.35 ? 1 : ratio < 0.65 ? 2 : ratio < 1 ? 3 : 4;
+      const cls = [iso === today ? 'cal-today' : '', isFuture ? 'cal-future' : ''].filter(Boolean).join(' ');
+      cellsHTML += `<i class="${cls}" data-lvl="${isFuture ? '' : lvl}" title="${iso}">${d}</i>`;
+    }
+
+    el.innerHTML = `
+      <div class="cal-head">
+        <button type="button" class="month-nav-btn" id="cal-prev" aria-label="Mes anterior">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span class="cal-month-title">${MESES[month]} ${year}</span>
+        <button type="button" class="month-nav-btn" id="cal-next" aria-label="Mes siguiente" ${atCurrentMonth ? 'disabled' : ''}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+      <div class="cal-grid cal-dow"><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
+      <div class="cal-grid">${cellsHTML}</div>
+    `;
+
+    document.getElementById('cal-prev').addEventListener('click', () => { state.habitCalendarMonth = addMonths(monthDate, -1); renderHabitHeatmap(); });
+    const nextBtn = document.getElementById('cal-next');
+    if (!atCurrentMonth) nextBtn.addEventListener('click', () => { state.habitCalendarMonth = addMonths(monthDate, 1); renderHabitHeatmap(); });
   }
 
   async function toggleHabit(id, wasDone) {
@@ -639,6 +678,41 @@ const App = (() => {
     const el = document.getElementById('ajustes-mode');
     if (el) el.textContent = DB.mode === 'supabase' ? 'Sincronizado con Supabase' : 'Local (solo este dispositivo)';
     renderProfileCard();
+    renderThemeToggle();
+  }
+
+  // ── Apariencia: claro / oscuro / sistema ──────────────────────────────────
+  const THEME_KEY = 'finanzas_theme';
+  function getStoredTheme() {
+    try { return localStorage.getItem(THEME_KEY) || 'dark'; } catch (e) { return 'dark'; }
+  }
+  function applyTheme(theme) {
+    if (theme === 'dark') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', theme);
+    const meta = document.getElementById('meta-theme-color');
+    if (meta) {
+      const isLight = theme === 'light' || (theme === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+      meta.setAttribute('content', isLight ? '#ffffff' : '#000000');
+    }
+  }
+  function setTheme(theme) {
+    try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+    applyTheme(theme);
+    renderThemeToggle();
+  }
+  function renderThemeToggle() {
+    const current = getStoredTheme();
+    document.querySelectorAll('#theme-toggle button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.themeChoice === current);
+    });
+  }
+
+  // ── Atajo: gestionar el plan de running desde Ajustes ─────────────────────
+  function openRunningManage() {
+    switchTab('entreno');
+    state.runningMode = 'programa';
+    state.runningEditing = true;
+    renderEntreno();
   }
 
   function currentEmail() {
@@ -1077,6 +1151,16 @@ const App = (() => {
       iconHTML: (item) => accountIconHTML(item, 18),
       add: () => addCustomAccount(), del: (id) => DB.deleteAccount(id), reload: () => loadAccounts(),
       addLabel: '+ Agregar cuenta'
+    },
+    habits: {
+      title: 'Hábitos', hint: '', customLabel: 'Tus hábitos diarios',
+      builtIn: () => [],
+      custom: () => state.habits.map((h) => ({ id: h.id, label: h.name + (h.meta ? ' · ' + h.meta : '') })),
+      iconHTML: (item) => letterAvatarHTML(item.label, 18),
+      add: () => addHabitPrompt(), del: (id) => DB.deleteHabit(id),
+      reload: async () => { await loadHabits(); renderHoy(); },
+      addLabel: '+ Agregar hábito',
+      confirmMsg: '¿Eliminar este hábito? También se borra su historial y racha.'
     }
   };
 
@@ -1094,9 +1178,12 @@ const App = (() => {
     document.getElementById('list-sheet-title').textContent = cfg.title;
     document.getElementById('list-sheet-hint').textContent = cfg.hint;
     document.getElementById('list-sheet-add-btn').textContent = cfg.addLabel;
+    document.getElementById('list-sheet-custom-label').textContent = cfg.customLabel || 'Personalizadas';
 
+    const builtIn = cfg.builtIn();
+    document.getElementById('list-sheet-builtin-block').classList.toggle('hidden', builtIn.length === 0);
     const builtinEl = document.getElementById('list-sheet-builtin');
-    builtinEl.innerHTML = cfg.builtIn().map((item) => `
+    builtinEl.innerHTML = builtIn.map((item) => `
       <div class="list-sheet-item">
         ${cfg.iconHTML(item)}
         <span class="list-sheet-item-label">${item.label}</span>
@@ -1123,7 +1210,7 @@ const App = (() => {
 
   async function deleteListItem(id) {
     const cfg = LIST_SHEET_CONFIG[state.listSheetKind];
-    const ok = await confirmDialog('¿Eliminar esta opción? Las transacciones que ya la usan no se modifican.');
+    const ok = await confirmDialog(cfg.confirmMsg || '¿Eliminar esta opción? Las transacciones que ya la usan no se modifican.');
     if (!ok) return;
     try {
       await cfg.del(id);
@@ -1589,7 +1676,8 @@ const App = (() => {
     deleteGoalFromSheet, addContribution, exportExcel, editCategoryBudget,
     openListSheet, closeListSheet, addListItem, deleteListItem,
     openProfileSheet, closeProfileSheet, onProfileNameInput, onProfileAgeInput, saveProfile,
-    sendMagicLink, signOut
+    sendMagicLink, signOut,
+    setTheme, openRunningManage
   };
 })();
 

@@ -1,22 +1,64 @@
 /* ── Reset & base ─────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
+/* Paleta oscura = la de siempre, default. --white es la "superficie de acento"
+   (botones primarios, estados activos) — en modo claro se invierte a casi-negro,
+   y en todo el CSS su texto/ícono usa var(--bg) en vez de un color fijo, así que
+   el contraste queda correcto en los dos modos sin tocar cada componente. */
 :root {
-  --bg:          #000000;
-  --bg-card:     #0d0d0d;
-  --bg-card2:    #161616;
-  --bg-pill:     #1c1c1e;
-  --border:      #262626;
-  --text:        #f2f2f2;
-  --text-muted:  #8a8a8e;
-  --text-faint:  #5a5a5e;
-  --red:         #ff453a;
-  --green:       #32d74b;
-  --blue:        #0a84ff;
-  --white:       #f5f5f7;
-  --safe-top:    env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --tab-bar-h:   58px;
+  --bg:            #000000;
+  --bg-card:       #0d0d0d;
+  --bg-card2:      #161616;
+  --bg-pill:       #1c1c1e;
+  --border:        #262626;
+  --text:          #f2f2f2;
+  --text-muted:    #8a8a8e;
+  --text-faint:    #5a5a5e;
+  --red:           #ff453a;
+  --green:         #32d74b;
+  --blue:          #0a84ff;
+  --white:         #f5f5f7;
+  --overlay-blur:  rgba(13,13,13,0.92);
+  --safe-top:      env(safe-area-inset-top, 0px);
+  --safe-bottom:   env(safe-area-inset-bottom, 0px);
+  --tab-bar-h:     58px;
+}
+
+:root[data-theme="light"] {
+  --bg:            #ffffff;
+  --bg-card:       #f7f7f8;
+  --bg-card2:      #efeff0;
+  --bg-pill:       #eaeaec;
+  --border:        #e0e0e2;
+  --text:          #111112;
+  --text-muted:    #6e6e73;
+  --text-faint:    #9a9a9e;
+  --red:           #d70015;
+  --green:         #1f8a3d;
+  --blue:          #0071e3;
+  --white:         #111112;
+  --overlay-blur:  rgba(255,255,255,0.92);
+}
+
+/* "Sistema": sigue la preferencia del SO. Solo aplica cuando el usuario eligió
+   explícitamente "Sistema" (marcado con data-theme="system" en <html>); si el SO
+   está en oscuro no hace falta nada (la paleta oscura ya es la de :root). */
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    --bg:            #ffffff;
+    --bg-card:       #f7f7f8;
+    --bg-card2:      #efeff0;
+    --bg-pill:       #eaeaec;
+    --border:        #e0e0e2;
+    --text:          #111112;
+    --text-muted:    #6e6e73;
+    --text-faint:    #9a9a9e;
+    --red:           #d70015;
+    --green:         #1f8a3d;
+    --blue:          #0071e3;
+    --white:         #111112;
+    --overlay-blur:  rgba(255,255,255,0.92);
+  }
 }
 
 html, body { height: 100%; }
@@ -72,7 +114,7 @@ input:focus, textarea:focus, button:focus { outline: none; }
 .auth-btn {
   width: 100%; max-width: 320px;
   background: var(--white);
-  color: #000;
+  color: var(--bg);
   font-weight: 700;
   font-size: 16px;
   padding: 15px;
@@ -200,7 +242,7 @@ input:focus, textarea:focus, button:focus { outline: none; }
   width: 58px; height: 58px;
   border-radius: 50%;
   background: var(--white);
-  color: #000;
+  color: var(--bg);
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 6px 20px rgba(0,0,0,0.5);
   z-index: 50;
@@ -214,7 +256,7 @@ input:focus, textarea:focus, button:focus { outline: none; }
   left: 0; right: 0; bottom: 0;
   display: flex;
   height: calc(var(--tab-bar-h) + var(--safe-bottom));
-  background: rgba(13,13,13,0.92);
+  background: var(--overlay-blur);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid var(--border);
@@ -370,7 +412,7 @@ input:focus, textarea:focus, button:focus { outline: none; }
 .sheet {
   width: 100%;
   max-height: 94vh;
-  background: #000;
+  background: var(--bg);
   border-radius: 20px 20px 0 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -407,6 +449,9 @@ input:focus, textarea:focus, button:focus { outline: none; }
 .type-toggle button.active[data-type="ahorro"] { background: var(--bg-card2); color: var(--green); }
 .type-toggle button.active[data-type="reduccion"] { background: var(--bg-card2); color: var(--red); }
 .type-toggle button.active[data-type="inversion"] { background: var(--bg-card2); color: var(--blue); }
+.type-toggle button.active[data-theme-choice] { background: var(--bg-card2); color: var(--text); }
+
+.ajustes-section-label { font-size: 12px; font-weight: 700; letter-spacing: 1px; color: var(--text-muted); text-transform: uppercase; margin: 22px 16px 8px; }
 
 .amount-section { text-align: center; padding: 28px 20px; }
 .amount-caption { font-size: 12px; font-weight: 700; letter-spacing: 1.5px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 10px; }
@@ -503,7 +548,7 @@ input:focus, textarea:focus, button:focus { outline: none; }
 .save-btn {
   width: 100%;
   background: var(--white);
-  color: #000;
+  color: var(--bg);
   font-weight: 700;
   font-size: 16px;
   padding: 17px;
@@ -704,7 +749,7 @@ input:focus, textarea:focus, button:focus { outline: none; }
   flex: none; width: 25px; height: 25px; border-radius: 50%;
   border: 1.5px solid var(--border); background: none; display: flex; align-items: center; justify-content: center;
 }
-.habit-check svg { width: 13px; height: 13px; stroke: #000; fill: none; stroke-width: 3; opacity: 0; }
+.habit-check svg { width: 13px; height: 13px; stroke: var(--bg); fill: none; stroke-width: 3; opacity: 0; }
 .habit.done .habit-check { background: var(--white); border-color: var(--white); }
 .habit.done .habit-check svg { opacity: 1; }
 .habit.done .habit-name, .habit.done .blk-text { color: var(--text-muted); text-decoration: line-through; text-decoration-color: var(--border); }
@@ -730,17 +775,33 @@ input:focus, textarea:focus, button:focus { outline: none; }
 .add-blk-btn.show { display: block; }
 
 .section-label { font-size: 12px; font-weight: 700; letter-spacing: 1px; color: var(--text-muted); text-transform: uppercase; margin: 4px 0 10px; }
-.heatmap { display: grid; grid-template-columns: repeat(13, 1fr); gap: 3px; padding-bottom: 8px; }
-.heatmap i { display: block; aspect-ratio: 1; border-radius: 3px; background: var(--bg-pill); }
-.heatmap i[data-lvl="1"] { background: color-mix(in srgb, var(--white) 22%, var(--bg-pill)); }
-.heatmap i[data-lvl="2"] { background: color-mix(in srgb, var(--white) 42%, var(--bg-pill)); }
-.heatmap i[data-lvl="3"] { background: color-mix(in srgb, var(--white) 65%, var(--bg-pill)); }
-.heatmap i[data-lvl="4"] { background: var(--white); }
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cal-month-title { font-size: 14.5px; font-weight: 700; }
+.cal-head .month-nav-btn { width: 32px; height: 32px; }
+.cal-head .month-nav-btn svg { width: 17px; height: 17px; }
+.cal-head .month-nav-btn:disabled { opacity: 0.3; }
+
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+.cal-grid.cal-dow { margin-bottom: 6px; }
+.cal-dow span { text-align: center; font-size: 10.5px; font-weight: 700; color: var(--text-faint); }
+.cal-grid i {
+  display: flex; align-items: center; justify-content: center;
+  aspect-ratio: 1; border-radius: 10px; background: var(--bg-pill);
+  font-style: normal; font-size: 12.5px; font-weight: 600; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cal-grid i.cal-empty { background: none; }
+.cal-grid i[data-lvl="1"] { background: color-mix(in srgb, var(--white) 22%, var(--bg-pill)); color: var(--text); }
+.cal-grid i[data-lvl="2"] { background: color-mix(in srgb, var(--white) 45%, var(--bg-pill)); color: var(--text); }
+.cal-grid i[data-lvl="3"] { background: color-mix(in srgb, var(--white) 70%, var(--bg-pill)); color: var(--bg); }
+.cal-grid i[data-lvl="4"] { background: var(--white); color: var(--bg); font-weight: 800; }
+.cal-grid i.cal-today { box-shadow: 0 0 0 1.5px var(--white) inset; }
+.cal-grid i.cal-future { opacity: 0.35; }
 
 /* ── Entreno: programa de running + carrera libre ─────────────────────────── */
 .plan-switch { display: flex; gap: 4px; background: var(--bg-pill); border: 1px solid var(--border); border-radius: 999px; padding: 3px; margin-bottom: 16px; }
 .plan-switch button { flex: 1; border: none; background: none; padding: 9px 8px; border-radius: 999px; font-size: 13px; font-weight: 700; color: var(--text-muted); }
-.plan-switch button[aria-pressed="true"] { background: var(--white); color: #000; }
+.plan-switch button[aria-pressed="true"] { background: var(--white); color: var(--bg); }
 
 .sub { font-size: 13.5px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
 .plan-count { font-size: 12.5px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
@@ -754,12 +815,12 @@ input:focus, textarea:focus, button:focus { outline: none; }
 .prog-head-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .day-pills { display: flex; gap: 3px; flex: 1; background: var(--bg-pill); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
 .day-pills button { flex: 1; border: none; background: none; padding: 8px 4px; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
-.day-pills button[aria-pressed="true"] { background: var(--white); color: #000; }
+.day-pills button[aria-pressed="true"] { background: var(--white); color: var(--bg); }
 .edit-plan-btn {
   flex: none; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg-pill);
   display: flex; align-items: center; justify-content: center; color: var(--text-muted);
 }
-.edit-plan-btn[aria-pressed="true"] { background: var(--white); color: #000; border-color: var(--white); }
+.edit-plan-btn[aria-pressed="true"] { background: var(--white); color: var(--bg); border-color: var(--white); }
 .edit-plan-btn svg { width: 16px; height: 16px; }
 
 .warmup-row { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
@@ -776,7 +837,7 @@ input:focus, textarea:focus, button:focus { outline: none; }
 
 .save-run-btn {
   width: 100%; padding: 14px; border-radius: 16px; border: none;
-  background: var(--white); color: #000; font-size: 14.5px; font-weight: 700; margin-bottom: 18px;
+  background: var(--white); color: var(--bg); font-size: 14.5px; font-weight: 700; margin-bottom: 18px;
 }
 
 .run-row { display: flex; align-items: center; gap: 11px; padding: 10px 2px; border-bottom: 1px solid var(--border); }

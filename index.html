@@ -1,9 +1,18 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+  <script>
+    // Corre antes de pintar nada, para que no haya parpadeo del tema al cargar.
+    (function () {
+      try {
+        var t = localStorage.getItem('finanzas_theme') || 'dark';
+        if (t !== 'dark') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
-  <meta name="theme-color" content="#000000">
+  <meta name="theme-color" content="#000000" id="meta-theme-color">
   <meta name="description" content="Finanzas — registra tus ingresos y gastos diarios">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -108,6 +117,30 @@
             <span class="profile-age" id="profile-age"></span>
           </button>
 
+          <div class="ajustes-section-label">Apariencia</div>
+          <div class="type-toggle" id="theme-toggle" style="margin:8px 16px 8px;">
+            <button data-theme-choice="light" onclick="App.setTheme('light')">Claro</button>
+            <button data-theme-choice="dark" onclick="App.setTheme('dark')">Oscuro</button>
+            <button data-theme-choice="system" onclick="App.setTheme('system')">Sistema</button>
+          </div>
+
+          <div class="ajustes-section-label">Hábitos y entreno</div>
+          <button class="ajustes-row" onclick="App.openListSheet('habits')">
+            <span class="ajustes-row-icon">✅</span>
+            <span class="ajustes-row-text">
+              <span class="ajustes-row-title">Hábitos</span>
+              <span class="ajustes-row-sub">Agrega o elimina tus hábitos diarios</span>
+            </span>
+          </button>
+          <button class="ajustes-row" onclick="App.openRunningManage()">
+            <span class="ajustes-row-icon">🏃</span>
+            <span class="ajustes-row-text">
+              <span class="ajustes-row-title">Plan de running</span>
+              <span class="ajustes-row-sub">Edita los bloques de cada día del programa</span>
+            </span>
+          </button>
+
+          <div class="ajustes-section-label">Finanzas</div>
           <button class="ajustes-row" onclick="App.openListSheet('categories')">
             <span class="ajustes-row-icon">🏷️</span>
             <span class="ajustes-row-text">
@@ -332,13 +365,13 @@
         <div class="sheet-spacer" style="width:48px;"></div>
       </div>
 
-      <div class="field-block" style="margin-top:14px;">
+      <div class="field-block" style="margin-top:14px;" id="list-sheet-builtin-block">
         <div class="field-label" id="list-sheet-hint">Predeterminadas — no se pueden eliminar</div>
         <div class="list-sheet-items" id="list-sheet-builtin"></div>
       </div>
 
       <div class="field-block">
-        <div class="field-label">Personalizadas</div>
+        <div class="field-label" id="list-sheet-custom-label">Personalizadas</div>
         <div class="list-sheet-items" id="list-sheet-custom"></div>
       </div>
 
