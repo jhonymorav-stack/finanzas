@@ -1,7 +1,7 @@
-const CACHE = 'finanzas-v3';
+const CACHE = 'finanzas-v4';
 const ASSETS = [
   '/', '/index.html', '/css/style.css',
-  '/js/config.js', '/js/categories.js', '/js/accounts.js', '/js/db.js',
+  '/js/config.js', '/js/categories.js', '/js/accounts.js', '/js/quotes.js', '/js/db.js',
   '/js/rates.js', '/js/export.js', '/js/app.js'
 ];
 
