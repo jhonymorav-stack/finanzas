@@ -853,3 +853,62 @@ input:focus, textarea:focus, button:focus { outline: none; }
 .run-row .rdist { font-size: 14.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .run-row .rmeta { display: block; font-size: 12px; color: var(--text-faint); margin-top: 1px; }
 .run-row .rterrain { flex: none; font-size: 11px; color: var(--text-muted); background: var(--bg-pill); padding: 4px 9px; border-radius: 999px; }
+
+/* ── Entreno: tipo (running / pesas) ──────────────────────────────────────── */
+.ent-type-row { margin: 4px 0 16px; }
+
+/* ── Pesas ────────────────────────────────────────────────────────────────── */
+.gym-row { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 12px 13px; margin-bottom: 8px; }
+.gym-row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.gym-row-name { font-size: 14.5px; font-weight: 700; }
+.gym-row-target { font-size: 12px; color: var(--text-faint); font-variant-numeric: tabular-nums; margin-top: 1px; }
+.gym-remove { flex: none; width: 26px; height: 26px; border-radius: 50%; background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); font-size: 15px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.gym-sets-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.gym-set-btn {
+  width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid var(--border-strong, var(--border));
+  background: var(--bg-pill); color: var(--text-muted); font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums;
+}
+.gym-set-btn.done { background: var(--white); color: var(--bg); border-color: var(--white); }
+
+.add-gym-btn {
+  display: block; width: 100%; padding: 12px; margin: 6px 0 18px;
+  border-radius: 14px; border: 1px dashed var(--border); background: none;
+  color: var(--text-muted); font-size: 13.5px; font-weight: 600;
+}
+
+/* ── Temporizador de descanso ─────────────────────────────────────────────── */
+.timer-overlay {
+  position: fixed;
+  bottom: calc(var(--tab-bar-h) + var(--safe-bottom));
+  left: 0; right: 0;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  border-radius: 20px 20px 0 0;
+  z-index: 300;
+  padding: 20px 24px calc(24px + var(--safe-bottom));
+  transform: translateY(0);
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s;
+}
+.timer-overlay.hidden { transform: translateY(110%); opacity: 0; pointer-events: none; }
+.timer-overlay.visible { transform: translateY(0); opacity: 1; }
+
+.timer-content { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.timer-label { font-size: 12px; font-weight: 700; letter-spacing: 2.5px; color: var(--text-muted); }
+.timer-ring { position: relative; width: 110px; height: 110px; }
+.timer-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.timer-ring-bg { stroke: var(--border); fill: none; stroke-width: 7; }
+.timer-ring-progress {
+  fill: none; stroke: var(--white); stroke-width: 7; stroke-linecap: round;
+  stroke-dasharray: 264; stroke-dashoffset: 0;
+  transition: stroke-dashoffset 1s linear;
+}
+.timer-countdown {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 40px; font-weight: 800; color: var(--text); letter-spacing: 1px; font-variant-numeric: tabular-nums;
+}
+.btn-skip-timer {
+  background: transparent; border: 1.5px solid var(--border); color: var(--text-muted);
+  font-size: 12.5px; font-weight: 700; letter-spacing: 1.5px; padding: 9px 30px; border-radius: 20px;
+}
+.btn-skip-timer:active { border-color: var(--white); color: var(--text); }

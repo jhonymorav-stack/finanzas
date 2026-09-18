@@ -407,6 +407,21 @@
     </div>
   </div>
 
+  <!-- ── Temporizador de descanso (Pesas) ─────────────────────────────────── -->
+  <div id="timer-overlay" class="timer-overlay hidden">
+    <div class="timer-content">
+      <span class="timer-label">DESCANSO</span>
+      <div class="timer-ring">
+        <svg viewBox="0 0 100 100">
+          <circle class="timer-ring-bg" cx="50" cy="50" r="42"/>
+          <circle class="timer-ring-progress" cx="50" cy="50" r="42" id="timer-ring-circle" style="stroke-dasharray:264; stroke-dashoffset:0"/>
+        </svg>
+        <span class="timer-countdown" id="timer-countdown">60</span>
+      </div>
+      <button class="btn-skip-timer" onclick="App.skipTimer()">SALTAR</button>
+    </div>
+  </div>
+
   <div id="toast"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -415,6 +430,7 @@
   <script src="js/categories.js"></script>
   <script src="js/accounts.js"></script>
   <script src="js/quotes.js"></script>
+  <script src="js/timer.js"></script>
   <script src="js/db.js"></script>
   <script src="js/rates.js"></script>
   <script src="js/export.js"></script>

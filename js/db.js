@@ -17,6 +17,8 @@ const DB = (() => {
   const RUNNING_BLOCKS_KEY = 'finanzas_running_blocks_v1';
   const RUNNING_COMPLETIONS_KEY = 'finanzas_running_completions_v1';
   const FREE_RUNS_KEY = 'finanzas_free_runs_v1';
+  const GYM_EXERCISES_KEY = 'finanzas_gym_exercises_v1';
+  const GYM_SET_LOGS_KEY = 'finanzas_gym_set_logs_v1';
 
   let client = null;
   if (configured && window.supabase) {
@@ -502,6 +504,79 @@ const DB = (() => {
       const { data, error } = await client.from('running_free_runs').insert({ ...run, user_id }).select().single();
       if (error) throw error;
       return data;
+    },
+
+    // ── Pesas ─────────────────────────────────────────────────────────────────
+    async listGymExercises() {
+      if (!configured) {
+        return localList(GYM_EXERCISES_KEY).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+      }
+      const { data, error } = await client.from('gym_exercises').select('*').order('sort_order', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+
+    async addGymExercise(ex) {
+      if (!configured) {
+        const list = localList(GYM_EXERCISES_KEY);
+        const row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), sort_order: list.length, ...ex };
+        list.push(row);
+        localSave(GYM_EXERCISES_KEY, list);
+        return row;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      const user_id = sessionData.session?.user?.id;
+      const { data, error } = await client.from('gym_exercises').insert({ ...ex, user_id }).select().single();
+      if (error) throw error;
+      return data;
+    },
+
+    async deleteGymExercise(id) {
+      if (!configured) {
+        localSave(GYM_EXERCISES_KEY, localList(GYM_EXERCISES_KEY).filter((e) => e.id !== id));
+        localSave(GYM_SET_LOGS_KEY, localList(GYM_SET_LOGS_KEY).filter((l) => l.exercise_id !== id));
+        return;
+      }
+      const { error } = await client.from('gym_exercises').delete().eq('id', id);
+      if (error) throw error;
+    },
+
+    async listGymSetLogs(sinceDate) {
+      if (!configured) {
+        return localList(GYM_SET_LOGS_KEY).filter((l) => !sinceDate || l.log_date >= sinceDate);
+      }
+      let q = client.from('gym_set_logs').select('*');
+      if (sinceDate) q = q.gte('log_date', sinceDate);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data;
+    },
+
+    async markSetDone(exerciseId, setNumber, dateISO) {
+      if (!configured) {
+        const list = localList(GYM_SET_LOGS_KEY);
+        if (!list.some((l) => l.exercise_id === exerciseId && l.set_number === setNumber && l.log_date === dateISO)) {
+          list.push({ id: crypto.randomUUID(), exercise_id: exerciseId, set_number: setNumber, log_date: dateISO });
+          localSave(GYM_SET_LOGS_KEY, list);
+        }
+        return;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      const user_id = sessionData.session?.user?.id;
+      const { error } = await client.from('gym_set_logs').upsert(
+        { exercise_id: exerciseId, set_number: setNumber, log_date: dateISO, user_id },
+        { onConflict: 'exercise_id,set_number,log_date', ignoreDuplicates: true }
+      );
+      if (error) throw error;
+    },
+
+    async unmarkSetDone(exerciseId, setNumber, dateISO) {
+      if (!configured) {
+        localSave(GYM_SET_LOGS_KEY, localList(GYM_SET_LOGS_KEY).filter((l) => !(l.exercise_id === exerciseId && l.set_number === setNumber && l.log_date === dateISO)));
+        return;
+      }
+      const { error } = await client.from('gym_set_logs').delete().eq('exercise_id', exerciseId).eq('set_number', setNumber).eq('log_date', dateISO);
+      if (error) throw error;
     }
   };
 })();

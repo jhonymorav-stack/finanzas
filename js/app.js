@@ -49,7 +49,11 @@ const App = (() => {
     freeRuns: [],
     runningMode: 'programa', // 'programa' | 'libre'
     runningDay: 1,            // 1-4, elegido a mano por el usuario
-    runningEditing: false
+    runningEditing: false,
+    entrenoType: null,        // 'running' | 'pesas' — se resuelve de localStorage al primer render
+    // pesas
+    gymExercises: [],   // filas { id, name, sets, reps, sort_order }
+    gymSetLogs: []       // filas { exercise_id, set_number, log_date } de los últimos ~30 días
   };
 
   // ── Date helpers ─────────────────────────────────────────────────────────
@@ -130,7 +134,8 @@ const App = (() => {
   function loadAll() {
     return Promise.all([
       loadTransactions(), loadGoals(), loadCategories(), loadAccounts(), loadBudgets(), loadProfile(),
-      loadHabits(), loadHabitLogs(), loadRunningBlocks(), loadRunningCompletions(), loadFreeRuns()
+      loadHabits(), loadHabitLogs(), loadRunningBlocks(), loadRunningCompletions(), loadFreeRuns(),
+      loadGymExercises(), loadGymSetLogs()
     ]).then(seedRunningProgramIfNeeded);
   }
 
@@ -213,6 +218,16 @@ const App = (() => {
 
   async function loadFreeRuns() {
     try { state.freeRuns = await DB.listFreeRuns(); }
+    catch (e) { console.error(e); }
+  }
+
+  async function loadGymExercises() {
+    try { state.gymExercises = await DB.listGymExercises(); }
+    catch (e) { console.error(e); }
+  }
+
+  async function loadGymSetLogs() {
+    try { state.gymSetLogs = await DB.listGymSetLogs(addDaysISO(todayISO(), -30)); }
     catch (e) { console.error(e); }
   }
 
@@ -462,24 +477,51 @@ const App = (() => {
     return isFinite(n) ? Math.round(n * 60) : 0;
   }
 
+  const ENTRENO_TYPE_KEY = 'finanzas_entreno_type';
+  function getEntrenoType() {
+    try { return localStorage.getItem(ENTRENO_TYPE_KEY) || 'running'; } catch (e) { return 'running'; }
+  }
+  function setEntrenoType(type) {
+    try { localStorage.setItem(ENTRENO_TYPE_KEY, type); } catch (e) {}
+    state.entrenoType = type;
+    renderEntreno();
+  }
+
   function renderEntreno() {
     const el = document.getElementById('entreno-content');
     if (!el) return;
+    const type = state.entrenoType || (state.entrenoType = getEntrenoType());
+
     el.innerHTML = `
       <div class="ent-head">
         <div class="ent-date">Entreno</div>
-        <h1 class="ent-title" id="ent-title">Running</h1>
+        <h1 class="ent-title" id="ent-title">${type === 'pesas' ? 'Pesas' : 'Running'}</h1>
       </div>
-      <div class="plan-switch" id="ent-mode-switch">
-        <button type="button" data-rmode="programa" aria-pressed="${state.runningMode === 'programa'}">Programa</button>
-        <button type="button" data-rmode="libre" aria-pressed="${state.runningMode === 'libre'}">Carrera libre</button>
+      <div class="type-toggle ent-type-row" id="ent-type-switch">
+        <button type="button" data-etype="running" class="${type === 'running' ? 'active' : ''}">Running</button>
+        <button type="button" data-etype="pesas" class="${type === 'pesas' ? 'active' : ''}">Pesas</button>
       </div>
+      <div id="ent-sub"></div>
       <div id="ent-body"></div>
     `;
-    document.querySelectorAll('#ent-mode-switch button').forEach((b) => {
-      b.addEventListener('click', () => { state.runningMode = b.dataset.rmode; renderEntreno(); });
+    document.querySelectorAll('#ent-type-switch button').forEach((b) => {
+      b.addEventListener('click', () => setEntrenoType(b.dataset.etype));
     });
-    if (state.runningMode === 'libre') renderRunningLibre(); else renderRunningPrograma();
+
+    if (type === 'pesas') {
+      renderPesas();
+    } else {
+      document.getElementById('ent-sub').innerHTML = `
+        <div class="plan-switch" id="ent-mode-switch">
+          <button type="button" data-rmode="programa" aria-pressed="${state.runningMode === 'programa'}">Programa</button>
+          <button type="button" data-rmode="libre" aria-pressed="${state.runningMode === 'libre'}">Carrera libre</button>
+        </div>
+      `;
+      document.querySelectorAll('#ent-mode-switch button').forEach((b) => {
+        b.addEventListener('click', () => { state.runningMode = b.dataset.rmode; renderEntreno(); });
+      });
+      if (state.runningMode === 'libre') renderRunningLibre(); else renderRunningPrograma();
+    }
   }
 
   function renderRunningPrograma() {
@@ -646,6 +688,120 @@ const App = (() => {
     } catch (e) { console.error(e); toast('No se pudo guardar la carrera'); }
   }
 
+  // ── Pesas ──────────────────────────────────────────────────────────────────
+  function renderPesas() {
+    const sub = document.getElementById('ent-sub');
+    const body = document.getElementById('ent-body');
+    if (!sub || !body) return;
+    sub.innerHTML = '';
+
+    const today = todayISO();
+    const doneSet = new Set(state.gymSetLogs.filter((l) => l.log_date === today).map((l) => l.exercise_id + '#' + l.set_number));
+
+    if (state.gymExercises.length === 0) {
+      body.innerHTML = `<div class="empty-state"><div class="empty-icon">🏋️</div><p>Todavía no tienes ejercicios.<br>Toca "+ agregar ejercicio" para crear el primero.</p></div><button type="button" class="add-gym-btn" id="add-gym-btn">+ agregar ejercicio</button>`;
+      document.getElementById('add-gym-btn').addEventListener('click', addGymExercisePrompt);
+      return;
+    }
+
+    body.innerHTML = state.gymExercises.map((ex) => `
+      <div class="gym-row" data-ex="${ex.id}">
+        <div class="gym-row-head">
+          <div>
+            <div class="gym-row-name">${escapeHtml(ex.name)}</div>
+            <div class="gym-row-target">${ex.sets} series · ${escapeHtml(ex.reps)} reps</div>
+          </div>
+          <button class="gym-remove" aria-label="Eliminar ${escapeHtml(ex.name)}">&times;</button>
+        </div>
+        <div class="gym-sets-row">
+          ${Array.from({ length: ex.sets }, (_, i) => i + 1).map((n) => `
+            <button type="button" class="gym-set-btn${doneSet.has(ex.id + '#' + n) ? ' done' : ''}" data-set="${n}">${n}</button>
+          `).join('')}
+        </div>
+      </div>
+    `).join('') + `<button type="button" class="add-gym-btn" id="add-gym-btn">+ agregar ejercicio</button>`;
+
+    document.querySelectorAll('.gym-row').forEach((row) => {
+      const exId = row.dataset.ex;
+      row.querySelector('.gym-remove').addEventListener('click', () => removeGymExercise(exId, row.querySelector('.gym-row-name').textContent));
+      row.querySelectorAll('.gym-set-btn').forEach((btn) => {
+        btn.addEventListener('click', () => toggleGymSet(exId, Number(btn.dataset.set), btn.classList.contains('done')));
+      });
+    });
+    document.getElementById('add-gym-btn').addEventListener('click', addGymExercisePrompt);
+  }
+
+  async function addGymExercisePrompt() {
+    const name = await promptText('Nombre del ejercicio', 'ej. Press banca');
+    if (!name) return;
+    const setsStr = await promptValue('Series', { type: 'text', placeholder: '4', defaultValue: '4', okLabel: 'Siguiente' });
+    const sets = Math.max(1, Math.min(20, parseInt(setsStr, 10) || 4));
+    const reps = await promptText('Repeticiones por serie', 'ej. 10-12') || '10-12';
+    try {
+      const row = await DB.addGymExercise({ name, sets, reps, sort_order: state.gymExercises.length });
+      state.gymExercises.push(row);
+      renderPesas();
+    } catch (e) { console.error(e); toast('No se pudo agregar el ejercicio'); }
+  }
+
+  async function removeGymExercise(id, name) {
+    const ok = await confirmDialog(`¿Eliminar "${name}"? También se borra su historial de series.`, 'Eliminar');
+    if (!ok) return;
+    try {
+      await DB.deleteGymExercise(id);
+      state.gymExercises = state.gymExercises.filter((e) => e.id !== id);
+      state.gymSetLogs = state.gymSetLogs.filter((l) => l.exercise_id !== id);
+      renderPesas();
+    } catch (e) { console.error(e); toast('No se pudo eliminar el ejercicio'); }
+  }
+
+  async function toggleGymSet(exerciseId, setNumber, wasDone) {
+    const today = todayISO();
+    try {
+      if (wasDone) {
+        await DB.unmarkSetDone(exerciseId, setNumber, today);
+        state.gymSetLogs = state.gymSetLogs.filter((l) => !(l.exercise_id === exerciseId && l.set_number === setNumber && l.log_date === today));
+      } else {
+        await DB.markSetDone(exerciseId, setNumber, today);
+        state.gymSetLogs.push({ exercise_id: exerciseId, set_number: setNumber, log_date: today });
+        showRestTimer();
+      }
+      renderPesas();
+    } catch (e) { console.error(e); toast('No se pudo actualizar la serie'); }
+  }
+
+  // ── Temporizador de descanso ───────────────────────────────────────────────
+  function showRestTimer() {
+    const overlay = document.getElementById('timer-overlay');
+    overlay.classList.remove('hidden');
+    overlay.classList.add('visible');
+
+    const duration = 60;
+    const countdown = document.getElementById('timer-countdown');
+    const circle = document.getElementById('timer-ring-circle');
+    const circumference = 2 * Math.PI * 42;
+    circle.style.strokeDasharray = circumference;
+
+    Timer.start(duration,
+      (remaining, total) => {
+        countdown.textContent = remaining;
+        circle.style.strokeDashoffset = circumference * (1 - remaining / total);
+      },
+      () => hideRestTimer()
+    );
+  }
+
+  function hideRestTimer() {
+    const overlay = document.getElementById('timer-overlay');
+    overlay.classList.remove('visible');
+    overlay.classList.add('hidden');
+  }
+
+  function skipTimer() {
+    Timer.skip();
+    hideRestTimer();
+  }
+
   function renderMonthBar() {
     document.getElementById('month-title').textContent =
       `${MESES[state.currentMonth.getMonth()]} ${state.currentMonth.getFullYear()}`;
@@ -710,6 +866,8 @@ const App = (() => {
   // ── Atajo: gestionar el plan de running desde Ajustes ─────────────────────
   function openRunningManage() {
     switchTab('entreno');
+    try { localStorage.setItem(ENTRENO_TYPE_KEY, 'running'); } catch (e) {}
+    state.entrenoType = 'running';
     state.runningMode = 'programa';
     state.runningEditing = true;
     renderEntreno();
@@ -1677,7 +1835,7 @@ const App = (() => {
     openListSheet, closeListSheet, addListItem, deleteListItem,
     openProfileSheet, closeProfileSheet, onProfileNameInput, onProfileAgeInput, saveProfile,
     sendMagicLink, signOut,
-    setTheme, openRunningManage
+    setTheme, openRunningManage, skipTimer
   };
 })();
 
