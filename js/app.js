@@ -234,7 +234,8 @@ const App = (() => {
   }
 
   async function loadGymSetLogs() {
-    try { state.gymSetLogs = await DB.listGymSetLogs(addDaysISO(todayISO(), -30)); }
+    // 180 días: suficiente para ver una tendencia de peso de varios meses en el gráfico de progreso.
+    try { state.gymSetLogs = await DB.listGymSetLogs(addDaysISO(todayISO(), -180)); }
     catch (e) { console.error(e); }
   }
 
@@ -689,6 +690,26 @@ const App = (() => {
     catch (e) { console.error(e); toast('No se pudo guardar la semana'); }
   }
 
+  function runningPaceTrendHTML() {
+    const runs = state.freeRuns.slice(0, 10).slice().reverse(); // cronológico, últimas 10
+    if (runs.length < 2) return '';
+    const paces = runs.map((r) => r.duration_seconds / r.km);
+    const deltaSecs = paces[paces.length - 1] - paces[0];
+    const improved = deltaSecs < 0;
+    const deltaLabel = Math.abs(deltaSecs) < 1
+      ? 'Sin cambio desde tu primer registro'
+      : `${improved ? '−' : '+'}${fmtPace(Math.abs(deltaSecs))} /km desde tu primer registro`;
+    return `
+      <div class="trend-card">
+        <div class="trend-top">
+          <span class="trend-title">Ritmo por carrera (últimas ${runs.length})</span>
+          <span class="trend-delta${improved ? ' good' : ''}">${deltaLabel}</span>
+        </div>
+        ${sparklineSVG(paces, '--white')}
+      </div>
+    `;
+  }
+
   function renderRunningLibre() {
     const body = document.getElementById('ent-body');
     const today = todayISO();
@@ -704,6 +725,7 @@ const App = (() => {
         <div class="stat-tile"><span class="v">${weekRuns.length}</span><span class="k">carreras</span></div>
         <div class="stat-tile"><span class="v">${avgPace}</span><span class="k">ritmo prom. /km</span></div>
       </div>
+      ${runningPaceTrendHTML()}
       <button type="button" class="save-run-btn" id="add-run-btn">+ registrar carrera</button>
       <p class="section-label">Historial</p>
       <div id="run-history"></div>
@@ -747,6 +769,50 @@ const App = (() => {
 
   // ── Pesas ──────────────────────────────────────────────────────────────────
   const GYM_ROUTINE_KEY = 'finanzas_gym_active_routine';
+
+  // ── Gráfico de progreso (SVG simple, sin librerías) ───────────────────────
+  function sparklineSVG(points, colorVar) {
+    const w = 280, h = 64, pad = 8;
+    const min = Math.min(...points), max = Math.max(...points);
+    const range = (max - min) || 1;
+    const stepX = points.length > 1 ? (w - pad * 2) / (points.length - 1) : 0;
+    const coords = points.map((v, i) => [
+      pad + i * stepX,
+      pad + (h - pad * 2) * (1 - (v - min) / range)
+    ]);
+    const path = coords.map(([x, y], i) => (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1)).join(' ');
+    const dots = coords.map(([x, y], i) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${i === coords.length - 1 ? 3.5 : 2.5}" fill="currentColor"/>`).join('');
+    return `<svg viewBox="0 0 ${w} ${h}" class="trend-svg" style="color:var(${colorVar})"><path d="${path}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>${dots}</svg>`;
+  }
+
+  // Un punto por día: el peso más alto que registraste ese día para ese ejercicio.
+  function exerciseWeightSeries(exerciseId) {
+    const byDate = {};
+    state.gymSetLogs.forEach((l) => {
+      if (l.exercise_id !== exerciseId || l.weight == null) return;
+      byDate[l.log_date] = Math.max(byDate[l.log_date] || 0, Number(l.weight));
+    });
+    return Object.keys(byDate).sort().map((d) => ({ date: d, weight: byDate[d] }));
+  }
+
+  function gymTrendCardHTML(exerciseId) {
+    const series = exerciseWeightSeries(exerciseId);
+    if (series.length < 2) return '';
+    const weights = series.map((p) => p.weight);
+    const delta = weights[weights.length - 1] - weights[0];
+    const deltaLabel = delta === 0
+      ? 'Sin cambio desde tu primer registro'
+      : `${delta > 0 ? '+' : ''}${delta.toFixed(1)} kg desde tu primer registro`;
+    return `
+      <div class="trend-card">
+        <div class="trend-top">
+          <span class="trend-title">Progreso de peso</span>
+          <span class="trend-delta${delta > 0 ? ' good' : ''}">${deltaLabel}</span>
+        </div>
+        ${sparklineSVG(weights, '--white')}
+      </div>
+    `;
+  }
 
   function ensureActiveRoutine() {
     if (state.gymActiveRoutineId === null) {
@@ -799,12 +865,14 @@ const App = (() => {
       return;
     }
 
-    body.innerHTML = exercises.map((ex) => `
+    body.innerHTML = exercises.map((ex) => {
+      const lastW = lastKnownWeight(ex.id);
+      return `
       <div class="gym-row" data-ex="${ex.id}">
         <div class="gym-row-head">
           <div>
             <div class="gym-row-name">${escapeHtml(ex.name)}</div>
-            <div class="gym-row-target">${ex.sets} series · ${escapeHtml(ex.reps)} reps</div>
+            <div class="gym-row-target">${ex.sets} series · ${escapeHtml(ex.reps)} reps${lastW !== '' ? ` · último peso: ${lastW} kg` : ''}</div>
           </div>
           <button type="button" class="gym-remove" aria-label="Eliminar ${escapeHtml(ex.name)}">&times;</button>
         </div>
@@ -813,8 +881,10 @@ const App = (() => {
             <button type="button" class="gym-set-btn${doneSet.has(ex.id + '#' + n) ? ' done' : ''}" data-set="${n}" aria-pressed="${doneSet.has(ex.id + '#' + n)}" aria-label="Serie ${n}">${n}</button>
           `).join('')}
         </div>
+        ${gymTrendCardHTML(ex.id)}
       </div>
-    `).join('') + `<button type="button" class="add-gym-btn" id="add-gym-btn">+ agregar ejercicio</button>`;
+    `;
+    }).join('') + `<button type="button" class="add-gym-btn" id="add-gym-btn">+ agregar ejercicio</button>`;
 
     document.querySelectorAll('.gym-row').forEach((row) => {
       const exId = row.dataset.ex;
@@ -883,6 +953,18 @@ const App = (() => {
     } catch (e) { console.error(e); toast('No se pudo eliminar el ejercicio'); }
   }
 
+  // Recuerda el peso dentro de la misma sesión de la pestaña, para no preguntar
+  // en cada serie — solo la primera vez que marcas una serie de ese ejercicio
+  // hoy. Se resetea al recargar la página (no hace falta guardarlo en ningún lado).
+  const gymWeightCacheToday = {};
+
+  function lastKnownWeight(exerciseId) {
+    const logs = state.gymSetLogs
+      .filter((l) => l.exercise_id === exerciseId && l.weight != null)
+      .sort((a, b) => b.log_date.localeCompare(a.log_date));
+    return logs.length ? logs[0].weight : '';
+  }
+
   async function toggleGymSet(exerciseId, setNumber, wasDone) {
     const today = todayISO();
     try {
@@ -890,8 +972,14 @@ const App = (() => {
         await DB.unmarkSetDone(exerciseId, setNumber, today);
         state.gymSetLogs = state.gymSetLogs.filter((l) => !(l.exercise_id === exerciseId && l.set_number === setNumber && l.log_date === today));
       } else {
-        await DB.markSetDone(exerciseId, setNumber, today);
-        state.gymSetLogs.push({ exercise_id: exerciseId, set_number: setNumber, log_date: today });
+        let weight = gymWeightCacheToday[exerciseId];
+        if (weight === undefined) {
+          const weightStr = await promptValue('Peso usado (kg)', { type: 'text', placeholder: 'ej. 40', defaultValue: lastKnownWeight(exerciseId), okLabel: 'Guardar serie' });
+          weight = weightStr !== null && weightStr !== '' ? parseFloat(String(weightStr).replace(',', '.')) : null;
+          if (weight !== null && !isNaN(weight)) gymWeightCacheToday[exerciseId] = weight;
+        }
+        await DB.markSetDone(exerciseId, setNumber, today, isNaN(weight) ? null : weight);
+        state.gymSetLogs.push({ exercise_id: exerciseId, set_number: setNumber, log_date: today, weight: isNaN(weight) ? null : weight });
         showRestTimer();
       }
       renderPesas();

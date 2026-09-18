@@ -589,11 +589,11 @@ const DB = (() => {
       return data;
     },
 
-    async markSetDone(exerciseId, setNumber, dateISO) {
+    async markSetDone(exerciseId, setNumber, dateISO, weight) {
       if (!configured) {
         const list = localList(GYM_SET_LOGS_KEY);
         if (!list.some((l) => l.exercise_id === exerciseId && l.set_number === setNumber && l.log_date === dateISO)) {
-          list.push({ id: crypto.randomUUID(), exercise_id: exerciseId, set_number: setNumber, log_date: dateISO });
+          list.push({ id: crypto.randomUUID(), exercise_id: exerciseId, set_number: setNumber, log_date: dateISO, weight: weight ?? null });
           localSave(GYM_SET_LOGS_KEY, list);
         }
         return;
@@ -601,7 +601,7 @@ const DB = (() => {
       const { data: sessionData } = await client.auth.getSession();
       const user_id = sessionData.session?.user?.id;
       const { error } = await client.from('gym_set_logs').upsert(
-        { exercise_id: exerciseId, set_number: setNumber, log_date: dateISO, user_id },
+        { exercise_id: exerciseId, set_number: setNumber, log_date: dateISO, user_id, weight: weight ?? null },
         { onConflict: 'exercise_id,set_number,log_date', ignoreDuplicates: true }
       );
       if (error) throw error;

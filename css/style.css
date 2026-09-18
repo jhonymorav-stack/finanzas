@@ -926,3 +926,11 @@ input:focus, textarea:focus, button:focus { outline: none; }
 .week-goal-bar { height: 6px; border-radius: 999px; background: var(--bg-pill); overflow: hidden; }
 .week-goal-fill { height: 100%; background: var(--white); border-radius: 999px; transition: width 0.3s ease; }
 .week-goal-card.met .week-goal-fill { background: var(--green); }
+
+/* ── Gráfico de progreso (peso en Pesas, ritmo en Running) ───────────────────── */
+.trend-card { background: var(--bg-pill); border: 1px solid var(--border); border-radius: 14px; padding: 12px 13px; margin: 10px 0; }
+.trend-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.trend-title { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.trend-delta { font-size: 11.5px; font-weight: 700; color: var(--text-faint); font-variant-numeric: tabular-nums; text-align: right; }
+.trend-delta.good { color: var(--green); }
+.trend-svg { display: block; width: 100%; height: 64px; }
