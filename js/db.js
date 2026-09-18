@@ -20,6 +20,7 @@ const DB = (() => {
   const GYM_ROUTINES_KEY = 'finanzas_gym_routines_v1';
   const GYM_EXERCISES_KEY = 'finanzas_gym_exercises_v1';
   const GYM_SET_LOGS_KEY = 'finanzas_gym_set_logs_v1';
+  const TASKS_KEY = 'finanzas_tasks_v1';
 
   let client = null;
   if (configured && window.supabase) {
@@ -613,6 +614,55 @@ const DB = (() => {
         return;
       }
       const { error } = await client.from('gym_set_logs').delete().eq('exercise_id', exerciseId).eq('set_number', setNumber).eq('log_date', dateISO);
+      if (error) throw error;
+    },
+
+    // ── Tareas ────────────────────────────────────────────────────────────────
+    async listTasks() {
+      if (!configured) {
+        return localList(TASKS_KEY).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+      }
+      const { data, error } = await client.from('tasks').select('*').order('sort_order', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+
+    async addTask(task) {
+      if (!configured) {
+        const list = localList(TASKS_KEY);
+        const row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), done: false, sort_order: list.length, ...task };
+        list.push(row);
+        localSave(TASKS_KEY, list);
+        return row;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      const user_id = sessionData.session?.user?.id;
+      const { data, error } = await client.from('tasks').insert({ ...task, user_id }).select().single();
+      if (error) throw error;
+      return data;
+    },
+
+    async setTaskDone(id, done) {
+      const patch = { done, completed_at: done ? new Date().toISOString() : null };
+      if (!configured) {
+        const list = localList(TASKS_KEY);
+        const idx = list.findIndex((t) => t.id === id);
+        if (idx === -1) throw new Error('Tarea no encontrada');
+        list[idx] = { ...list[idx], ...patch };
+        localSave(TASKS_KEY, list);
+        return list[idx];
+      }
+      const { data, error } = await client.from('tasks').update(patch).eq('id', id).select().single();
+      if (error) throw error;
+      return data;
+    },
+
+    async deleteTask(id) {
+      if (!configured) {
+        localSave(TASKS_KEY, localList(TASKS_KEY).filter((t) => t.id !== id));
+        return;
+      }
+      const { error } = await client.from('tasks').delete().eq('id', id);
       if (error) throw error;
     }
   };

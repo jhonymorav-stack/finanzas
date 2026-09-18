@@ -55,7 +55,11 @@ const App = (() => {
     gymRoutines: [],      // filas { id, name, sort_order } — hasta 3
     gymActiveRoutineId: null, // se resuelve de localStorage al primer render
     gymExercises: [],   // filas { id, routine_id, name, sets, reps, sort_order }
-    gymSetLogs: []       // filas { exercise_id, set_number, log_date } de los últimos ~30 días
+    gymSetLogs: [],      // filas { exercise_id, set_number, log_date, weight } de los últimos ~180 días
+    // finanzas (sub-tab dentro del tab unido)
+    financeSubTab: null, // 'resumen' | 'metricas' | 'metas' — se resuelve de localStorage al primer render
+    // tareas
+    tasks: []             // filas { id, text, done, sort_order }
   };
 
   // ── Date helpers ─────────────────────────────────────────────────────────
@@ -137,7 +141,7 @@ const App = (() => {
     return Promise.all([
       loadTransactions(), loadGoals(), loadCategories(), loadAccounts(), loadBudgets(), loadProfile(),
       loadHabits(), loadHabitLogs(), loadRunningBlocks(), loadRunningCompletions(), loadFreeRuns(),
-      loadGymRoutines(), loadGymExercises(), loadGymSetLogs()
+      loadGymRoutines(), loadGymExercises(), loadGymSetLogs(), loadTasks()
     ]).then(seedRunningProgramIfNeeded).then(ensureDefaultGymRoutine);
   }
 
@@ -239,6 +243,11 @@ const App = (() => {
     catch (e) { console.error(e); }
   }
 
+  async function loadTasks() {
+    try { state.tasks = await DB.listTasks(); }
+    catch (e) { console.error(e); }
+  }
+
   // Igual que con el programa de running: sin este guardado, loadAll() puede
   // correr dos veces en el mismo login y crear dos "Entreno 1" duplicados.
   let gymRoutineSeedAttempted = false;
@@ -317,6 +326,7 @@ const App = (() => {
     renderTxList();
     renderMetrics();
     renderGoals();
+    renderTareas();
   }
 
   // ── Hoy: hábitos + frase/versículo ───────────────────────────────────────
@@ -472,6 +482,79 @@ const App = (() => {
       state.habitLogs = state.habitLogs.filter((l) => l.habit_id !== id);
       renderHoy();
     } catch (e) { console.error(e); toast('No se pudo eliminar el hábito'); }
+  }
+
+  // ── Tareas: checklist simple (no diaria, no lleva racha) ──────────────────
+  function renderTareas() {
+    const el = document.getElementById('tareas-content');
+    if (!el) return;
+
+    const pending = state.tasks.filter((t) => !t.done).sort((a, b) => a.sort_order - b.sort_order);
+    const done = state.tasks.filter((t) => t.done).sort((a, b) => (b.completed_at || '').localeCompare(a.completed_at || ''));
+
+    el.innerHTML = `
+      <div class="hoy-head">
+        <div>
+          <div class="hoy-date">TAREAS</div>
+          <h1 class="hoy-title">Pendientes</h1>
+        </div>
+      </div>
+      <ul class="habit-list" id="task-list-pending"></ul>
+      <button type="button" class="add-habit-btn" id="add-task-btn">+ agregar tarea</button>
+      ${done.length ? '<p class="section-label">Hechas</p><ul class="habit-list" id="task-list-done"></ul>' : ''}
+    `;
+
+    const pendingEl = document.getElementById('task-list-pending');
+    if (pending.length === 0) {
+      pendingEl.innerHTML = `<div class="empty-state"><div class="empty-icon">📝</div><p>No tienes tareas pendientes.<br>Toca "+ agregar tarea" para crear una.</p></div>`;
+    } else {
+      pending.forEach((t) => pendingEl.appendChild(buildTaskRow(t)));
+    }
+
+    const doneEl = document.getElementById('task-list-done');
+    if (doneEl) done.forEach((t) => doneEl.appendChild(buildTaskRow(t)));
+
+    document.getElementById('add-task-btn').addEventListener('click', addTaskPrompt);
+  }
+
+  function buildTaskRow(t) {
+    const li = document.createElement('li');
+    li.className = 'habit' + (t.done ? ' done' : '');
+    li.innerHTML = `
+      <button type="button" class="habit-check" aria-pressed="${t.done}" aria-label="${t.done ? 'Marcar pendiente' : 'Marcar hecha'}">${CHECK_SVG}</button>
+      <div class="habit-body"><span class="habit-name">${escapeHtml(t.text)}</span></div>
+      <button type="button" class="habit-remove" aria-label="Eliminar tarea">&times;</button>
+    `;
+    li.querySelector('.habit-check').addEventListener('click', () => toggleTask(t.id, t.done));
+    li.querySelector('.habit-remove').addEventListener('click', () => removeTask(t.id));
+    return li;
+  }
+
+  async function addTaskPrompt() {
+    const text = await promptText('Nueva tarea', 'ej. Pagar el arriendo');
+    if (!text) return;
+    try {
+      const row = await DB.addTask({ text, sort_order: state.tasks.filter((t) => !t.done).length });
+      state.tasks.push(row);
+      renderTareas();
+    } catch (e) { console.error(e); toast('No se pudo agregar la tarea'); }
+  }
+
+  async function toggleTask(id, wasDone) {
+    try {
+      const row = await DB.setTaskDone(id, !wasDone);
+      const idx = state.tasks.findIndex((t) => t.id === id);
+      if (idx !== -1) state.tasks[idx] = row;
+      renderTareas();
+    } catch (e) { console.error(e); toast('No se pudo actualizar la tarea'); }
+  }
+
+  async function removeTask(id) {
+    try {
+      await DB.deleteTask(id);
+      state.tasks = state.tasks.filter((t) => t.id !== id);
+      renderTareas();
+    } catch (e) { console.error(e); toast('No se pudo eliminar la tarea'); }
   }
 
   // ── Entreno: running (programa de intervalos + carrera libre) ────────────
@@ -1037,13 +1120,42 @@ const App = (() => {
     state.activeTab = tab;
     document.getElementById('panel-hoy').classList.toggle('hidden', tab !== 'hoy');
     document.getElementById('panel-entreno').classList.toggle('hidden', tab !== 'entreno');
-    document.getElementById('panel-resumen').classList.toggle('hidden', tab !== 'resumen');
-    document.getElementById('panel-metricas').classList.toggle('hidden', tab !== 'metricas');
-    document.getElementById('panel-metas').classList.toggle('hidden', tab !== 'metas');
+    document.getElementById('panel-finanzas').classList.toggle('hidden', tab !== 'finanzas');
+    document.getElementById('panel-tareas').classList.toggle('hidden', tab !== 'tareas');
     document.getElementById('panel-ajustes').classList.toggle('hidden', tab !== 'ajustes');
     document.querySelectorAll('.tab-item').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
-    document.getElementById('fab-btn').classList.toggle('hidden', tab === 'hoy' || tab === 'entreno' || tab === 'metricas' || tab === 'ajustes');
+    updateFabVisibility();
     if (tab === 'ajustes') renderAjustes();
+    if (tab === 'finanzas') renderFinanceSub();
+  }
+
+  // ── Finanzas: Resumen / Métricas / Metas unidas con un selector ──────────
+  const FINANCE_SUB_KEY = 'finanzas_finance_sub';
+  function getFinanceSub() {
+    try { return localStorage.getItem(FINANCE_SUB_KEY) || 'resumen'; } catch (e) { return 'resumen'; }
+  }
+  function switchFinanceSub(sub) {
+    try { localStorage.setItem(FINANCE_SUB_KEY, sub); } catch (e) {}
+    state.financeSubTab = sub;
+    renderFinanceSub();
+  }
+  function renderFinanceSub() {
+    const sub = state.financeSubTab || (state.financeSubTab = getFinanceSub());
+    document.getElementById('fin-resumen').classList.toggle('hidden', sub !== 'resumen');
+    document.getElementById('fin-metricas').classList.toggle('hidden', sub !== 'metricas');
+    document.getElementById('fin-metas').classList.toggle('hidden', sub !== 'metas');
+    document.querySelectorAll('#finance-sub-switch button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.fsub === sub);
+    });
+    updateFabVisibility();
+  }
+
+  // El FAB (+) solo tiene sentido en Resumen (agregar transacción) y en Metas
+  // (agregar meta) — en todo lo demás no hace nada, así que se oculta.
+  function updateFabVisibility() {
+    const tab = state.activeTab;
+    const show = (tab === 'finanzas' && (state.financeSubTab === 'resumen' || state.financeSubTab === 'metas'));
+    document.getElementById('fab-btn').classList.toggle('hidden', !show);
   }
 
   function renderAjustes() {
@@ -1111,7 +1223,7 @@ const App = (() => {
   }
 
   function handleFabClick() {
-    if (state.activeTab === 'metas') openGoalSheet();
+    if (state.activeTab === 'finanzas' && state.financeSubTab === 'metas') openGoalSheet();
     else openSheet();
   }
 
@@ -1282,7 +1394,8 @@ const App = (() => {
   function jumpToMonth(year, month) {
     state.currentMonth = new Date(year, month, 1);
     renderAll();
-    switchTab('resumen');
+    state.financeSubTab = 'resumen';
+    switchTab('finanzas');
   }
 
   async function editCategoryBudget(catId) {
@@ -2058,7 +2171,7 @@ const App = (() => {
     openListSheet, closeListSheet, addListItem, deleteListItem,
     openProfileSheet, closeProfileSheet, onProfileNameInput, onProfileAgeInput, saveProfile,
     sendMagicLink, signOut,
-    setTheme, openRunningManage, openPesasManage, skipTimer
+    setTheme, openRunningManage, openPesasManage, skipTimer, switchFinanceSub
   };
 })();
 

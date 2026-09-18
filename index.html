@@ -48,16 +48,6 @@
     <!-- ── App shell (logueado) ────────────────────────────────────────── -->
     <section id="app-shell" class="screen hidden">
 
-      <div class="month-bar">
-        <button class="month-nav-btn" onclick="App.prevMonth()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        </button>
-        <div class="month-title" id="month-title">—</div>
-        <button class="month-nav-btn" onclick="App.nextMonth()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-        </button>
-      </div>
-
       <!-- Tab: Hoy (hábitos) -->
       <div id="panel-hoy" class="tab-panel">
         <div class="hoy-content" id="hoy-content"></div>
@@ -68,41 +58,62 @@
         <div class="entreno-content" id="entreno-content"></div>
       </div>
 
-      <!-- Tab: Resumen -->
-      <div id="panel-resumen" class="tab-panel hidden">
-        <div class="balance-card">
-          <div class="balance-top">
-            <span class="balance-label">Balance neto</span>
-            <span class="currency-pill">COP</span>
-          </div>
-          <div class="balance-amount" id="balance-amount">COP 0</div>
-          <div class="balance-usd" id="balance-usd"></div>
-          <div class="balance-delta" id="balance-delta"></div>
-          <div class="balance-divider"></div>
-          <div class="balance-split">
-            <div>
-              <div class="split-label">Ingresos</div>
-              <div class="split-amount income" id="income-amount">+COP 0</div>
-            </div>
-            <div>
-              <div class="split-label">Egresos</div>
-              <div class="split-amount expense" id="expense-amount">−COP 0</div>
-            </div>
-          </div>
+      <!-- Tab: Finanzas (Resumen + Métricas + Metas, unidas con un selector arriba) -->
+      <div id="panel-finanzas" class="tab-panel hidden">
+        <div class="month-bar">
+          <button class="month-nav-btn" onclick="App.prevMonth()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="month-title" id="month-title">—</div>
+          <button class="month-nav-btn" onclick="App.nextMonth()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
         </div>
-        <div class="rates-note" id="rates-note"></div>
 
-        <div class="tx-list" id="tx-list"></div>
+        <div class="type-toggle" id="finance-sub-switch" style="margin:4px 16px 16px;">
+          <button data-fsub="resumen" onclick="App.switchFinanceSub('resumen')">Resumen</button>
+          <button data-fsub="metricas" onclick="App.switchFinanceSub('metricas')">Métricas</button>
+          <button data-fsub="metas" onclick="App.switchFinanceSub('metas')">Metas</button>
+        </div>
+
+        <div id="fin-resumen" class="fin-sub">
+          <div class="balance-card">
+            <div class="balance-top">
+              <span class="balance-label">Balance neto</span>
+              <span class="currency-pill">COP</span>
+            </div>
+            <div class="balance-amount" id="balance-amount">COP 0</div>
+            <div class="balance-usd" id="balance-usd"></div>
+            <div class="balance-delta" id="balance-delta"></div>
+            <div class="balance-divider"></div>
+            <div class="balance-split">
+              <div>
+                <div class="split-label">Ingresos</div>
+                <div class="split-amount income" id="income-amount">+COP 0</div>
+              </div>
+              <div>
+                <div class="split-label">Egresos</div>
+                <div class="split-amount expense" id="expense-amount">−COP 0</div>
+              </div>
+            </div>
+          </div>
+          <div class="rates-note" id="rates-note"></div>
+
+          <div class="tx-list" id="tx-list"></div>
+        </div>
+
+        <div id="fin-metricas" class="fin-sub hidden">
+          <div class="metrics-content" id="metrics-content"></div>
+        </div>
+
+        <div id="fin-metas" class="fin-sub hidden">
+          <div class="goals-content" id="goals-content"></div>
+        </div>
       </div>
 
-      <!-- Tab: Métricas -->
-      <div id="panel-metricas" class="tab-panel hidden">
-        <div class="metrics-content" id="metrics-content"></div>
-      </div>
-
-      <!-- Tab: Metas -->
-      <div id="panel-metas" class="tab-panel hidden">
-        <div class="goals-content" id="goals-content"></div>
+      <!-- Tab: Tareas (checklist simple, no diaria — se guarda hasta que la borres) -->
+      <div id="panel-tareas" class="tab-panel hidden">
+        <div class="tareas-content" id="tareas-content"></div>
       </div>
 
       <!-- Tab: Ajustes -->
@@ -192,17 +203,13 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M4 9v6M20 9v6M7 7v10M17 7v10"/></svg>
           <span>Entreno</span>
         </button>
-        <button class="tab-item" data-tab="resumen" onclick="App.switchTab('resumen')">
+        <button class="tab-item" data-tab="finanzas" onclick="App.switchTab('finanzas')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="12" y2="16"/></svg>
-          <span>Resumen</span>
+          <span>Finanzas</span>
         </button>
-        <button class="tab-item" data-tab="metricas" onclick="App.switchTab('metricas')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M12 20V4M20 20v-7"/></svg>
-          <span>Métricas</span>
-        </button>
-        <button class="tab-item" data-tab="metas" onclick="App.switchTab('metas')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>
-          <span>Metas</span>
+        <button class="tab-item" data-tab="tareas" onclick="App.switchTab('tareas')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="3.5" width="15" height="17" rx="2"/><path d="M8.5 11l2 2 4-4M8.5 16.5h5.5"/></svg>
+          <span>Tareas</span>
         </button>
         <button class="tab-item" data-tab="ajustes" onclick="App.switchTab('ajustes')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
