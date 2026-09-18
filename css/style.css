@@ -1,5 +1,8 @@
 /* ── Reset & base ─────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+/* Evita el zoom por doble-tap en iPhone (Safari lo hace de todos modos aunque
+   el viewport diga maximum-scale=1) sin bloquear el pan/scroll normal. */
+html { touch-action: manipulation; }
 
 /* Paleta oscura = la de siempre, default. --white es la "superficie de acento"
    (botones primarios, estados activos) — en modo claro se invierte a casi-negro,
@@ -411,7 +414,10 @@ input:focus, textarea:focus, button:focus { outline: none; }
 }
 .sheet {
   width: 100%;
-  max-height: 94vh;
+  max-height: 94vh;    /* fallback para navegadores sin soporte de dvh */
+  max-height: 92dvh;   /* mide el viewport visible real — 94vh se calcula mal en
+                           iPhone cuando la barra de direcciones está visible, y
+                           empuja el encabezado (con "Cancelar") fuera de pantalla */
   background: var(--bg);
   border-radius: 20px 20px 0 0;
   overflow-y: auto;
