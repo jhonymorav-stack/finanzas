@@ -17,6 +17,7 @@ const DB = (() => {
   const RUNNING_BLOCKS_KEY = 'finanzas_running_blocks_v1';
   const RUNNING_COMPLETIONS_KEY = 'finanzas_running_completions_v1';
   const FREE_RUNS_KEY = 'finanzas_free_runs_v1';
+  const GYM_ROUTINES_KEY = 'finanzas_gym_routines_v1';
   const GYM_EXERCISES_KEY = 'finanzas_gym_exercises_v1';
   const GYM_SET_LOGS_KEY = 'finanzas_gym_set_logs_v1';
 
@@ -506,7 +507,42 @@ const DB = (() => {
       return data;
     },
 
-    // ── Pesas ─────────────────────────────────────────────────────────────────
+    // ── Pesas: entrenos (rutinas) ────────────────────────────────────────────
+    async listGymRoutines() {
+      if (!configured) {
+        return localList(GYM_ROUTINES_KEY).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+      }
+      const { data, error } = await client.from('gym_routines').select('*').order('sort_order', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+
+    async addGymRoutine(routine) {
+      if (!configured) {
+        const list = localList(GYM_ROUTINES_KEY);
+        const row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), sort_order: list.length, ...routine };
+        list.push(row);
+        localSave(GYM_ROUTINES_KEY, list);
+        return row;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      const user_id = sessionData.session?.user?.id;
+      const { data, error } = await client.from('gym_routines').insert({ ...routine, user_id }).select().single();
+      if (error) throw error;
+      return data;
+    },
+
+    async deleteGymRoutine(id) {
+      if (!configured) {
+        localSave(GYM_ROUTINES_KEY, localList(GYM_ROUTINES_KEY).filter((r) => r.id !== id));
+        localSave(GYM_EXERCISES_KEY, localList(GYM_EXERCISES_KEY).filter((e) => e.routine_id !== id));
+        return;
+      }
+      const { error } = await client.from('gym_routines').delete().eq('id', id);
+      if (error) throw error;
+    },
+
+    // ── Pesas: ejercicios ─────────────────────────────────────────────────────
     async listGymExercises() {
       if (!configured) {
         return localList(GYM_EXERCISES_KEY).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
@@ -519,7 +555,8 @@ const DB = (() => {
     async addGymExercise(ex) {
       if (!configured) {
         const list = localList(GYM_EXERCISES_KEY);
-        const row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), sort_order: list.length, ...ex };
+        const sameRoutine = list.filter((e) => e.routine_id === ex.routine_id);
+        const row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), sort_order: sameRoutine.length, ...ex };
         list.push(row);
         localSave(GYM_EXERCISES_KEY, list);
         return row;

@@ -52,7 +52,9 @@ const App = (() => {
     runningEditing: false,
     entrenoType: null,        // 'running' | 'pesas' — se resuelve de localStorage al primer render
     // pesas
-    gymExercises: [],   // filas { id, name, sets, reps, sort_order }
+    gymRoutines: [],      // filas { id, name, sort_order } — hasta 3
+    gymActiveRoutineId: null, // se resuelve de localStorage al primer render
+    gymExercises: [],   // filas { id, routine_id, name, sets, reps, sort_order }
     gymSetLogs: []       // filas { exercise_id, set_number, log_date } de los últimos ~30 días
   };
 
@@ -135,8 +137,8 @@ const App = (() => {
     return Promise.all([
       loadTransactions(), loadGoals(), loadCategories(), loadAccounts(), loadBudgets(), loadProfile(),
       loadHabits(), loadHabitLogs(), loadRunningBlocks(), loadRunningCompletions(), loadFreeRuns(),
-      loadGymExercises(), loadGymSetLogs()
-    ]).then(seedRunningProgramIfNeeded);
+      loadGymRoutines(), loadGymExercises(), loadGymSetLogs()
+    ]).then(seedRunningProgramIfNeeded).then(ensureDefaultGymRoutine);
   }
 
   async function init() {
@@ -221,6 +223,11 @@ const App = (() => {
     catch (e) { console.error(e); }
   }
 
+  async function loadGymRoutines() {
+    try { state.gymRoutines = await DB.listGymRoutines(); }
+    catch (e) { console.error(e); }
+  }
+
   async function loadGymExercises() {
     try { state.gymExercises = await DB.listGymExercises(); }
     catch (e) { console.error(e); }
@@ -229,6 +236,19 @@ const App = (() => {
   async function loadGymSetLogs() {
     try { state.gymSetLogs = await DB.listGymSetLogs(addDaysISO(todayISO(), -30)); }
     catch (e) { console.error(e); }
+  }
+
+  // Igual que con el programa de running: sin este guardado, loadAll() puede
+  // correr dos veces en el mismo login y crear dos "Entreno 1" duplicados.
+  let gymRoutineSeedAttempted = false;
+  async function ensureDefaultGymRoutine() {
+    if (gymRoutineSeedAttempted) return;
+    gymRoutineSeedAttempted = true;
+    if (state.gymRoutines.length > 0) return;
+    try {
+      const row = await DB.addGymRoutine({ name: 'Entreno 1', sort_order: 0 });
+      state.gymRoutines.push(row);
+    } catch (e) { console.error(e); }
   }
 
   // La primera vez que alguien entra, precarga tu programa real de running
@@ -477,6 +497,41 @@ const App = (() => {
     return isFinite(n) ? Math.round(n * 60) : 0;
   }
 
+  // ── Meta semanal (min. 2 entrenos/semana, tanto pesas como running) ───────
+  function weekRange(dateISO) {
+    const d = new Date(dateISO + 'T00:00:00');
+    const dow = (d.getDay() + 6) % 7; // 0 = lunes
+    const monday = addDaysISO(dateISO, -dow);
+    return { monday, sunday: addDaysISO(monday, 6) };
+  }
+  function inWeek(dateISO, monday, sunday) { return dateISO >= monday && dateISO <= sunday; }
+
+  function gymWeeklyCount() {
+    const { monday, sunday } = weekRange(todayISO());
+    const dates = new Set(state.gymSetLogs.filter((l) => inWeek(l.log_date, monday, sunday)).map((l) => l.log_date));
+    return dates.size;
+  }
+  function runningWeeklyCount() {
+    const { monday, sunday } = weekRange(todayISO());
+    const dates = new Set();
+    state.runningCompletions.forEach((c) => { if (inWeek(c.done_date, monday, sunday)) dates.add(c.done_date); });
+    state.freeRuns.forEach((r) => { if (inWeek(r.run_date, monday, sunday)) dates.add(r.run_date); });
+    return dates.size;
+  }
+  function weekGoalCardHTML(count, goal, label) {
+    const pct = Math.min(100, Math.round((count / goal) * 100));
+    const met = count >= goal;
+    return `
+      <div class="week-goal-card${met ? ' met' : ''}">
+        <div class="week-goal-top">
+          <span class="week-goal-label">${label}</span>
+          <span class="week-goal-count">${count}/${goal}${met ? ' ✅' : ''}</span>
+        </div>
+        <div class="week-goal-bar"><div class="week-goal-fill" style="width:${pct}%"></div></div>
+      </div>
+    `;
+  }
+
   const ENTRENO_TYPE_KEY = 'finanzas_entreno_type';
   function getEntrenoType() {
     try { return localStorage.getItem(ENTRENO_TYPE_KEY) || 'running'; } catch (e) { return 'running'; }
@@ -512,6 +567,7 @@ const App = (() => {
       renderPesas();
     } else {
       document.getElementById('ent-sub').innerHTML = `
+        ${weekGoalCardHTML(runningWeeklyCount(), 2, 'Entrenos de running esta semana')}
         <div class="plan-switch" id="ent-mode-switch">
           <button type="button" data-rmode="programa" aria-pressed="${state.runningMode === 'programa'}">Programa</button>
           <button type="button" data-rmode="libre" aria-pressed="${state.runningMode === 'libre'}">Carrera libre</button>
@@ -689,22 +745,60 @@ const App = (() => {
   }
 
   // ── Pesas ──────────────────────────────────────────────────────────────────
+  const GYM_ROUTINE_KEY = 'finanzas_gym_active_routine';
+
+  function ensureActiveRoutine() {
+    if (state.gymActiveRoutineId === null) {
+      try { state.gymActiveRoutineId = localStorage.getItem(GYM_ROUTINE_KEY); } catch (e) { state.gymActiveRoutineId = null; }
+    }
+    if (!state.gymActiveRoutineId || !state.gymRoutines.some((r) => r.id === state.gymActiveRoutineId)) {
+      state.gymActiveRoutineId = state.gymRoutines[0] ? state.gymRoutines[0].id : null;
+    }
+  }
+  function setActiveRoutine(id) {
+    state.gymActiveRoutineId = id;
+    try { localStorage.setItem(GYM_ROUTINE_KEY, id); } catch (e) {}
+  }
+
   function renderPesas() {
     const sub = document.getElementById('ent-sub');
     const body = document.getElementById('ent-body');
     if (!sub || !body) return;
-    sub.innerHTML = '';
+    ensureActiveRoutine();
+
+    const pillsHTML = state.gymRoutines.map((r) => `
+      <button type="button" data-routine="${r.id}" aria-pressed="${r.id === state.gymActiveRoutineId}">${escapeHtml(r.name)}</button>
+    `).join('');
+
+    sub.innerHTML = `
+      ${weekGoalCardHTML(gymWeeklyCount(), 2, 'Entrenos de pesas esta semana')}
+      <div class="prog-head-row">
+        <div class="day-pills" id="routine-pills">${pillsHTML}</div>
+        ${state.gymRoutines.length < 3 ? '<button type="button" class="edit-plan-btn" id="add-routine-btn" aria-label="Agregar entreno">+</button>' : ''}
+        ${state.gymRoutines.length > 1 ? '<button type="button" class="edit-plan-btn" id="del-routine-btn" aria-label="Eliminar este entreno">🗑</button>' : ''}
+      </div>
+    `;
+    document.querySelectorAll('#routine-pills button').forEach((b) => {
+      b.addEventListener('click', () => { setActiveRoutine(b.dataset.routine); renderPesas(); });
+    });
+    const addRoutineBtn = document.getElementById('add-routine-btn');
+    if (addRoutineBtn) addRoutineBtn.addEventListener('click', addGymRoutinePrompt);
+    const delRoutineBtn = document.getElementById('del-routine-btn');
+    if (delRoutineBtn) delRoutineBtn.addEventListener('click', removeActiveRoutine);
 
     const today = todayISO();
     const doneSet = new Set(state.gymSetLogs.filter((l) => l.log_date === today).map((l) => l.exercise_id + '#' + l.set_number));
+    const exercises = state.gymExercises
+      .filter((e) => e.routine_id === state.gymActiveRoutineId)
+      .sort((a, b) => a.sort_order - b.sort_order);
 
-    if (state.gymExercises.length === 0) {
-      body.innerHTML = `<div class="empty-state"><div class="empty-icon">🏋️</div><p>Todavía no tienes ejercicios.<br>Toca "+ agregar ejercicio" para crear el primero.</p></div><button type="button" class="add-gym-btn" id="add-gym-btn">+ agregar ejercicio</button>`;
+    if (exercises.length === 0) {
+      body.innerHTML = `<div class="empty-state"><div class="empty-icon">🏋️</div><p>Este entreno todavía no tiene ejercicios.<br>Toca "+ agregar ejercicio" para crear el primero.</p></div><button type="button" class="add-gym-btn" id="add-gym-btn">+ agregar ejercicio</button>`;
       document.getElementById('add-gym-btn').addEventListener('click', addGymExercisePrompt);
       return;
     }
 
-    body.innerHTML = state.gymExercises.map((ex) => `
+    body.innerHTML = exercises.map((ex) => `
       <div class="gym-row" data-ex="${ex.id}">
         <div class="gym-row-head">
           <div>
@@ -731,14 +825,41 @@ const App = (() => {
     document.getElementById('add-gym-btn').addEventListener('click', addGymExercisePrompt);
   }
 
+  async function addGymRoutinePrompt() {
+    if (state.gymRoutines.length >= 3) { toast('Máximo 3 entrenos'); return; }
+    const name = await promptText('Nombre del entreno', `ej. Entreno ${state.gymRoutines.length + 1}`);
+    if (!name) return;
+    try {
+      const row = await DB.addGymRoutine({ name, sort_order: state.gymRoutines.length });
+      state.gymRoutines.push(row);
+      setActiveRoutine(row.id);
+      renderPesas();
+    } catch (e) { console.error(e); toast('No se pudo agregar el entreno'); }
+  }
+
+  async function removeActiveRoutine() {
+    const routine = state.gymRoutines.find((r) => r.id === state.gymActiveRoutineId);
+    if (!routine) return;
+    const ok = await confirmDialog(`¿Eliminar "${routine.name}"? También se borran sus ejercicios.`, 'Eliminar');
+    if (!ok) return;
+    try {
+      await DB.deleteGymRoutine(routine.id);
+      state.gymRoutines = state.gymRoutines.filter((r) => r.id !== routine.id);
+      state.gymExercises = state.gymExercises.filter((e) => e.routine_id !== routine.id);
+      state.gymActiveRoutineId = null;
+      renderPesas();
+    } catch (e) { console.error(e); toast('No se pudo eliminar el entreno'); }
+  }
+
   async function addGymExercisePrompt() {
     const name = await promptText('Nombre del ejercicio', 'ej. Press banca');
     if (!name) return;
     const setsStr = await promptValue('Series', { type: 'text', placeholder: '4', defaultValue: '4', okLabel: 'Siguiente' });
     const sets = Math.max(1, Math.min(20, parseInt(setsStr, 10) || 4));
     const reps = await promptText('Repeticiones por serie', 'ej. 10-12') || '10-12';
+    const sortOrder = state.gymExercises.filter((e) => e.routine_id === state.gymActiveRoutineId).length;
     try {
-      const row = await DB.addGymExercise({ name, sets, reps, sort_order: state.gymExercises.length });
+      const row = await DB.addGymExercise({ name, sets, reps, sort_order: sortOrder, routine_id: state.gymActiveRoutineId });
       state.gymExercises.push(row);
       renderPesas();
     } catch (e) { console.error(e); toast('No se pudo agregar el ejercicio'); }
