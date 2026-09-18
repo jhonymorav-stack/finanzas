@@ -1,8 +1,11 @@
-# Finanzas — registro de gastos diarios
+# Finanzas — registro de gastos diarios, hábitos y running
 
-App web (PWA) para llevar tus ingresos y egresos, con balance mensual,
-métricas por categoría y por mes. Sin frameworks ni build step: HTML/CSS/JS
-puro + [Supabase](https://supabase.com) para guardar los datos en la nube.
+App web (PWA) para llevar tus ingresos y egresos (balance mensual, métricas
+por categoría y por mes), tus hábitos diarios con racha y frase/versículo, y
+tu programa de running por intervalos. Sin frameworks ni build step:
+HTML/CSS/JS puro + [Supabase](https://supabase.com) para guardar los datos
+en la nube. (El registro de Pesas/gimnasio todavía vive aparte, en
+Leandro Gym — se integra en una próxima entrega.)
 
 ## 1. Crear el proyecto en Supabase (gratis)
 
@@ -17,6 +20,11 @@ puro + [Supabase](https://supabase.com) para guardar los datos en la nube.
    proyecto, copia todo su contenido, pégalo en el editor y dale **Run**.
    Esto crea la tabla `transactions` con seguridad a nivel de fila (RLS) —
    cada usuario solo puede ver y editar sus propias transacciones.
+5.5. Repite el paso anterior con
+   [`supabase/schema_habitos_running.sql`](supabase/schema_habitos_running.sql)
+   — crea las tablas de hábitos y del programa de running (con la misma
+   seguridad por usuario) y le agrega 4 columnas a `profiles`. No toca nada
+   de lo que ya tenías.
 6. Ve a **Project Settings** (ícono de engranaje) → **API**.
 7. Copia dos valores:
    - **Project URL** (algo como `https://xxxxxxxxxxxx.supabase.co`)
@@ -127,10 +135,13 @@ finanzas/
 │   ├── config.js            ← AQUÍ van tus claves de Supabase
 │   ├── categories.js         Categorías predeterminadas + iconos
 │   ├── accounts.js            Cuentas predeterminadas + iconos
-│   ├── db.js                   Capa de datos (transacciones, metas, categorías,
-│   │                            cuentas, presupuestos, recibos)
-│   ├── rates.js                 Tasa de cambio COP → USD
-│   ├── export.js                 Exportar a Excel (SheetJS)
-│   └── app.js                     Lógica de la interfaz
-└── supabase/schema.sql     SQL para crear todas las tablas + bucket de recibos + seguridad
+│   ├── quotes.js               Frase + versículo del día (rotan solas, sin internet)
+│   ├── db.js                    Capa de datos (transacciones, metas, categorías,
+│   │                             cuentas, presupuestos, recibos, hábitos, running)
+│   ├── rates.js                  Tasa de cambio COP → USD
+│   ├── export.js                  Exportar a Excel (SheetJS)
+│   └── app.js                      Lógica de la interfaz (incluye Hoy y Entreno)
+└── supabase/
+    ├── schema.sql              SQL original: transacciones, metas, categorías, etc.
+    └── schema_habitos_running.sql   SQL de hábitos + programa de running
 ```

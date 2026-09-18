@@ -12,6 +12,14 @@ const DB = (() => {
   const ACCOUNTS_KEY = 'finanzas_custom_accounts_v1';
   const BUDGETS_KEY = 'finanzas_budgets_v1';
   const PROFILE_KEY = 'finanzas_profile_v1';
+  const HABITS_KEY = 'finanzas_habits_v1';
+  const HABIT_LOGS_KEY = 'finanzas_habit_logs_v1';
+  const RUNNING_BLOCKS_KEY = 'finanzas_running_blocks_v1';
+  const RUNNING_COMPLETIONS_KEY = 'finanzas_running_completions_v1';
+  const FREE_RUNS_KEY = 'finanzas_free_runs_v1';
+  const GYM_ROUTINES_KEY = 'finanzas_gym_routines_v1';
+  const GYM_EXERCISES_KEY = 'finanzas_gym_exercises_v1';
+  const GYM_SET_LOGS_KEY = 'finanzas_gym_set_logs_v1';
 
   let client = null;
   if (configured && window.supabase) {
@@ -324,6 +332,287 @@ const DB = (() => {
       const { error } = await client
         .from('profiles')
         .upsert({ id: uid, ...patch, updated_at: new Date().toISOString() });
+      if (error) throw error;
+    },
+
+    // ── Hábitos diarios ──────────────────────────────────────────────────────
+    async listHabits() {
+      if (!configured) {
+        return localList(HABITS_KEY).filter((h) => h.active !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+      }
+      const { data, error } = await client.from('habits').select('*').eq('active', true).order('sort_order', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+
+    async addHabit(habit) {
+      if (!configured) {
+        const list = localList(HABITS_KEY);
+        const row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), active: true, sort_order: list.length, ...habit };
+        list.push(row);
+        localSave(HABITS_KEY, list);
+        return row;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      const user_id = sessionData.session?.user?.id;
+      const { data, error } = await client.from('habits').insert({ ...habit, user_id }).select().single();
+      if (error) throw error;
+      return data;
+    },
+
+    async deleteHabit(id) {
+      if (!configured) {
+        localSave(HABITS_KEY, localList(HABITS_KEY).filter((h) => h.id !== id));
+        localSave(HABIT_LOGS_KEY, localList(HABIT_LOGS_KEY).filter((l) => l.habit_id !== id));
+        return;
+      }
+      const { error } = await client.from('habits').delete().eq('id', id);
+      if (error) throw error;
+    },
+
+    // sinceDate: 'YYYY-MM-DD' — trae los registros desde esa fecha (para racha + heatmap).
+    async listHabitLogs(sinceDate) {
+      if (!configured) {
+        return localList(HABIT_LOGS_KEY).filter((l) => !sinceDate || l.log_date >= sinceDate);
+      }
+      let q = client.from('habit_logs').select('*');
+      if (sinceDate) q = q.gte('log_date', sinceDate);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data;
+    },
+
+    async logHabit(habitId, dateISO) {
+      if (!configured) {
+        const list = localList(HABIT_LOGS_KEY);
+        if (!list.some((l) => l.habit_id === habitId && l.log_date === dateISO)) {
+          list.push({ id: crypto.randomUUID(), habit_id: habitId, log_date: dateISO });
+          localSave(HABIT_LOGS_KEY, list);
+        }
+        return;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      const user_id = sessionData.session?.user?.id;
+      const { error } = await client.from('habit_logs').upsert(
+        { habit_id: habitId, log_date: dateISO, user_id },
+        { onConflict: 'habit_id,log_date', ignoreDuplicates: true }
+      );
+      if (error) throw error;
+    },
+
+    async unlogHabit(habitId, dateISO) {
+      if (!configured) {
+        localSave(HABIT_LOGS_KEY, localList(HABIT_LOGS_KEY).filter((l) => !(l.habit_id === habitId && l.log_date === dateISO)));
+        return;
+      }
+      const { error } = await client.from('habit_logs').delete().eq('habit_id', habitId).eq('log_date', dateISO);
+      if (error) throw error;
+    },
+
+    // ── Running: programa de intervalos ──────────────────────────────────────
+    async listRunningBlocks() {
+      if (!configured) {
+        return localList(RUNNING_BLOCKS_KEY).sort((a, b) => (a.day_number - b.day_number) || (a.sort_order - b.sort_order));
+      }
+      const { data, error } = await client.from('running_blocks').select('*').order('day_number', { ascending: true }).order('sort_order', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+
+    async addRunningBlock(block) {
+      if (!configured) {
+        const list = localList(RUNNING_BLOCKS_KEY);
+        const row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), sort_order: list.filter((b) => b.day_number === block.day_number).length, ...block };
+        list.push(row);
+        localSave(RUNNING_BLOCKS_KEY, list);
+        return row;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      const user_id = sessionData.session?.user?.id;
+      const { data, error } = await client.from('running_blocks').insert({ ...block, user_id }).select().single();
+      if (error) throw error;
+      return data;
+    },
+
+    async deleteRunningBlock(id) {
+      if (!configured) {
+        localSave(RUNNING_BLOCKS_KEY, localList(RUNNING_BLOCKS_KEY).filter((b) => b.id !== id));
+        localSave(RUNNING_COMPLETIONS_KEY, localList(RUNNING_COMPLETIONS_KEY).filter((c) => c.block_id !== id));
+        return;
+      }
+      const { error } = await client.from('running_blocks').delete().eq('id', id);
+      if (error) throw error;
+    },
+
+    async listRunningCompletions(sinceDate) {
+      if (!configured) {
+        return localList(RUNNING_COMPLETIONS_KEY).filter((c) => !sinceDate || c.done_date >= sinceDate);
+      }
+      let q = client.from('running_completions').select('*');
+      if (sinceDate) q = q.gte('done_date', sinceDate);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data;
+    },
+
+    async markBlockDone(blockId, dateISO) {
+      if (!configured) {
+        const list = localList(RUNNING_COMPLETIONS_KEY);
+        if (!list.some((c) => c.block_id === blockId && c.done_date === dateISO)) {
+          list.push({ id: crypto.randomUUID(), block_id: blockId, done_date: dateISO });
+          localSave(RUNNING_COMPLETIONS_KEY, list);
+        }
+        return;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      const user_id = sessionData.session?.user?.id;
+      const { error } = await client.from('running_completions').upsert(
+        { block_id: blockId, done_date: dateISO, user_id },
+        { onConflict: 'block_id,done_date', ignoreDuplicates: true }
+      );
+      if (error) throw error;
+    },
+
+    async unmarkBlockDone(blockId, dateISO) {
+      if (!configured) {
+        localSave(RUNNING_COMPLETIONS_KEY, localList(RUNNING_COMPLETIONS_KEY).filter((c) => !(c.block_id === blockId && c.done_date === dateISO)));
+        return;
+      }
+      const { error } = await client.from('running_completions').delete().eq('block_id', blockId).eq('done_date', dateISO);
+      if (error) throw error;
+    },
+
+    // ── Running: carreras libres ──────────────────────────────────────────────
+    async listFreeRuns() {
+      if (!configured) {
+        return localList(FREE_RUNS_KEY).sort((a, b) => b.run_date.localeCompare(a.run_date) || (b.created_at || '').localeCompare(a.created_at || ''));
+      }
+      const { data, error } = await client.from('running_free_runs').select('*').order('run_date', { ascending: false }).order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+
+    async addFreeRun(run) {
+      if (!configured) {
+        const list = localList(FREE_RUNS_KEY);
+        const row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), ...run };
+        list.push(row);
+        localSave(FREE_RUNS_KEY, list);
+        return row;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      const user_id = sessionData.session?.user?.id;
+      const { data, error } = await client.from('running_free_runs').insert({ ...run, user_id }).select().single();
+      if (error) throw error;
+      return data;
+    },
+
+    // ── Pesas: entrenos (rutinas) ────────────────────────────────────────────
+    async listGymRoutines() {
+      if (!configured) {
+        return localList(GYM_ROUTINES_KEY).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+      }
+      const { data, error } = await client.from('gym_routines').select('*').order('sort_order', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+
+    async addGymRoutine(routine) {
+      if (!configured) {
+        const list = localList(GYM_ROUTINES_KEY);
+        const row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), sort_order: list.length, ...routine };
+        list.push(row);
+        localSave(GYM_ROUTINES_KEY, list);
+        return row;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      const user_id = sessionData.session?.user?.id;
+      const { data, error } = await client.from('gym_routines').insert({ ...routine, user_id }).select().single();
+      if (error) throw error;
+      return data;
+    },
+
+    async deleteGymRoutine(id) {
+      if (!configured) {
+        localSave(GYM_ROUTINES_KEY, localList(GYM_ROUTINES_KEY).filter((r) => r.id !== id));
+        localSave(GYM_EXERCISES_KEY, localList(GYM_EXERCISES_KEY).filter((e) => e.routine_id !== id));
+        return;
+      }
+      const { error } = await client.from('gym_routines').delete().eq('id', id);
+      if (error) throw error;
+    },
+
+    // ── Pesas: ejercicios ─────────────────────────────────────────────────────
+    async listGymExercises() {
+      if (!configured) {
+        return localList(GYM_EXERCISES_KEY).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+      }
+      const { data, error } = await client.from('gym_exercises').select('*').order('sort_order', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+
+    async addGymExercise(ex) {
+      if (!configured) {
+        const list = localList(GYM_EXERCISES_KEY);
+        const sameRoutine = list.filter((e) => e.routine_id === ex.routine_id);
+        const row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), sort_order: sameRoutine.length, ...ex };
+        list.push(row);
+        localSave(GYM_EXERCISES_KEY, list);
+        return row;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      const user_id = sessionData.session?.user?.id;
+      const { data, error } = await client.from('gym_exercises').insert({ ...ex, user_id }).select().single();
+      if (error) throw error;
+      return data;
+    },
+
+    async deleteGymExercise(id) {
+      if (!configured) {
+        localSave(GYM_EXERCISES_KEY, localList(GYM_EXERCISES_KEY).filter((e) => e.id !== id));
+        localSave(GYM_SET_LOGS_KEY, localList(GYM_SET_LOGS_KEY).filter((l) => l.exercise_id !== id));
+        return;
+      }
+      const { error } = await client.from('gym_exercises').delete().eq('id', id);
+      if (error) throw error;
+    },
+
+    async listGymSetLogs(sinceDate) {
+      if (!configured) {
+        return localList(GYM_SET_LOGS_KEY).filter((l) => !sinceDate || l.log_date >= sinceDate);
+      }
+      let q = client.from('gym_set_logs').select('*');
+      if (sinceDate) q = q.gte('log_date', sinceDate);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data;
+    },
+
+    async markSetDone(exerciseId, setNumber, dateISO) {
+      if (!configured) {
+        const list = localList(GYM_SET_LOGS_KEY);
+        if (!list.some((l) => l.exercise_id === exerciseId && l.set_number === setNumber && l.log_date === dateISO)) {
+          list.push({ id: crypto.randomUUID(), exercise_id: exerciseId, set_number: setNumber, log_date: dateISO });
+          localSave(GYM_SET_LOGS_KEY, list);
+        }
+        return;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      const user_id = sessionData.session?.user?.id;
+      const { error } = await client.from('gym_set_logs').upsert(
+        { exercise_id: exerciseId, set_number: setNumber, log_date: dateISO, user_id },
+        { onConflict: 'exercise_id,set_number,log_date', ignoreDuplicates: true }
+      );
+      if (error) throw error;
+    },
+
+    async unmarkSetDone(exerciseId, setNumber, dateISO) {
+      if (!configured) {
+        localSave(GYM_SET_LOGS_KEY, localList(GYM_SET_LOGS_KEY).filter((l) => !(l.exercise_id === exerciseId && l.set_number === setNumber && l.log_date === dateISO)));
+        return;
+      }
+      const { error } = await client.from('gym_set_logs').delete().eq('exercise_id', exerciseId).eq('set_number', setNumber).eq('log_date', dateISO);
       if (error) throw error;
     }
   };
