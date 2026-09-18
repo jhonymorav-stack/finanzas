@@ -384,7 +384,7 @@ const App = (() => {
             ${h.meta ? `<span class="habit-meta">${escapeHtml(h.meta)}</span>` : ''}
           </div>
           <span class="streak">${FLAME_SVG}${habitStreak(h.id)}</span>
-          <button class="habit-remove" aria-label="Eliminar ${escapeHtml(h.name)}">&times;</button>
+          <button type="button" class="habit-remove" aria-label="Eliminar ${escapeHtml(h.name)}">&times;</button>
         `;
         li.querySelector('.habit-check').addEventListener('click', () => toggleHabit(h.id, isDone));
         li.querySelector('.habit-remove').addEventListener('click', () => removeHabit(h.id, h.name));
@@ -567,7 +567,7 @@ const App = (() => {
       renderPesas();
     } else {
       document.getElementById('ent-sub').innerHTML = `
-        ${weekGoalCardHTML(runningWeeklyCount(), 2, 'Entrenos de running esta semana')}
+        ${weekGoalCardHTML(runningWeeklyCount(), 2, 'Meta semanal · entrenos de running')}
         <div class="plan-switch" id="ent-mode-switch">
           <button type="button" data-rmode="programa" aria-pressed="${state.runningMode === 'programa'}">Programa</button>
           <button type="button" data-rmode="libre" aria-pressed="${state.runningMode === 'libre'}">Carrera libre</button>
@@ -593,6 +593,7 @@ const App = (() => {
     const pct = blocks.length ? Math.round((doneCount / blocks.length) * 100) : 0;
 
     body.innerHTML = `
+      <p class="section-label">Programa de intervalos</p>
       <p class="sub">${escapeHtml(fase)}</p>
       <div class="week-row">
         <button type="button" class="week-btn" id="week-prev" ${week <= 1 ? 'disabled' : ''}>−</button>
@@ -630,7 +631,7 @@ const App = (() => {
         li.innerHTML = `
           <button class="habit-check" aria-pressed="${isDone}">${CHECK_SVG}</button>
           <div class="habit-body"><span class="habit-name blk-text">${escapeHtml(b.text)}</span></div>
-          <button class="blk-remove" aria-label="Quitar bloque">&times;</button>
+          <button type="button" class="blk-remove" aria-label="Quitar bloque">&times;</button>
         `;
         li.querySelector('.habit-check').addEventListener('click', () => toggleBlock(b.id, isDone));
         li.querySelector('.blk-remove').addEventListener('click', () => removeBlock(b.id));
@@ -771,7 +772,7 @@ const App = (() => {
     `).join('');
 
     sub.innerHTML = `
-      ${weekGoalCardHTML(gymWeeklyCount(), 2, 'Entrenos de pesas esta semana')}
+      ${weekGoalCardHTML(gymWeeklyCount(), 2, 'Meta semanal · entrenos de pesas')}
       <div class="prog-head-row">
         <div class="day-pills" id="routine-pills">${pillsHTML}</div>
         ${state.gymRoutines.length < 3 ? '<button type="button" class="edit-plan-btn" id="add-routine-btn" aria-label="Agregar entreno">+</button>' : ''}
@@ -805,11 +806,11 @@ const App = (() => {
             <div class="gym-row-name">${escapeHtml(ex.name)}</div>
             <div class="gym-row-target">${ex.sets} series · ${escapeHtml(ex.reps)} reps</div>
           </div>
-          <button class="gym-remove" aria-label="Eliminar ${escapeHtml(ex.name)}">&times;</button>
+          <button type="button" class="gym-remove" aria-label="Eliminar ${escapeHtml(ex.name)}">&times;</button>
         </div>
         <div class="gym-sets-row">
           ${Array.from({ length: ex.sets }, (_, i) => i + 1).map((n) => `
-            <button type="button" class="gym-set-btn${doneSet.has(ex.id + '#' + n) ? ' done' : ''}" data-set="${n}">${n}</button>
+            <button type="button" class="gym-set-btn${doneSet.has(ex.id + '#' + n) ? ' done' : ''}" data-set="${n}" aria-pressed="${doneSet.has(ex.id + '#' + n)}" aria-label="Serie ${n}">${n}</button>
           `).join('')}
         </div>
       </div>
@@ -854,9 +855,15 @@ const App = (() => {
   async function addGymExercisePrompt() {
     const name = await promptText('Nombre del ejercicio', 'ej. Press banca');
     if (!name) return;
+    // Series y repeticiones son parte del ejercicio, no opcionales — si cancelas
+    // cualquiera de los dos, se cancela crear el ejercicio (antes seguía de
+    // todos modos con un valor por defecto, sin avisar).
     const setsStr = await promptValue('Series', { type: 'text', placeholder: '4', defaultValue: '4', okLabel: 'Siguiente' });
+    if (setsStr === null) return;
     const sets = Math.max(1, Math.min(20, parseInt(setsStr, 10) || 4));
-    const reps = await promptText('Repeticiones por serie', 'ej. 10-12') || '10-12';
+    const repsStr = await promptValue('Repeticiones por serie', { type: 'text', placeholder: '10-12', defaultValue: '10-12', okLabel: 'Guardar ejercicio' });
+    if (repsStr === null) return;
+    const reps = repsStr || '10-12';
     const sortOrder = state.gymExercises.filter((e) => e.routine_id === state.gymActiveRoutineId).length;
     try {
       const row = await DB.addGymExercise({ name, sets, reps, sort_order: sortOrder, routine_id: state.gymActiveRoutineId });
@@ -991,6 +998,13 @@ const App = (() => {
     state.entrenoType = 'running';
     state.runningMode = 'programa';
     state.runningEditing = true;
+    renderEntreno();
+  }
+
+  function openPesasManage() {
+    switchTab('entreno');
+    try { localStorage.setItem(ENTRENO_TYPE_KEY, 'pesas'); } catch (e) {}
+    state.entrenoType = 'pesas';
     renderEntreno();
   }
 
@@ -1956,7 +1970,7 @@ const App = (() => {
     openListSheet, closeListSheet, addListItem, deleteListItem,
     openProfileSheet, closeProfileSheet, onProfileNameInput, onProfileAgeInput, saveProfile,
     sendMagicLink, signOut,
-    setTheme, openRunningManage, skipTimer
+    setTheme, openRunningManage, openPesasManage, skipTimer
   };
 })();
 
